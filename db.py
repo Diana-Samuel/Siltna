@@ -78,6 +78,12 @@ def adduserinfo(name: str, pw: str, email: str) -> bool:
         return False
     
 
+def verify(userid:str) -> bool:
+    try:
+        usercursor.execute("UPDATE users SET verifed = True WHERE id = ?",(userid,))
+        usercursor.connection.commit()
+    except Exception as e:
+        raise e
 
 
 def addPhone(user_id: str, phone: str) -> bool:

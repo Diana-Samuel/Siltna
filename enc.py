@@ -144,7 +144,33 @@ def decrypt(data_b64_str: str, date: str = None, encType :enc_types = "u") -> st
         raise e
         
 
+def encryptVerify(data: str) -> str:
+    key = b'N\xfe\xd9\x84\xf3x\xab\xbd\xf9\xcf\xf9Bz"k\xe5\xab]\x15\x0e\x00\xc8\xd8S\xe7/?\x8d\x8f\xc5\x04\t'
 
+    data_bytes = data.encode('utf-8')
+    nonce = os.urandom(12)
+    aesgcm = AESGCM(key)
+    enctext_and_tag = aesgcm.encrypt(nonce=nonce, data=data_bytes, associated_data="verify".encode())
+    combined_data = nonce + enctext_and_tag
+
+    return base64.urlsafe_b64encode(combined_data).decode('utf-8')
+
+
+def decryptVerify(data_b64_str: str) -> str:
+    key = b'N\xfe\xd9\x84\xf3x\xab\xbd\xf9\xcf\xf9Bz"k\xe5\xab]\x15\x0e\x00\xc8\xd8S\xe7/?\x8d\x8f\xc5\x04\t'
+
+    combined_data = base64.urlsafe_b64decode(data_b64_str.encode('utf-8'))
+    nonce = combined_data[:12]
+    enctext_and_tag = combined_data[12:]
+
+    aesgcm = AESGCM(key)
+    try:
+        dectext_bytes = aesgcm.decrypt(nonce=nonce, data=enctext_and_tag, associated_data="verify".encode())
+        return dectext_bytes.decode('utf-8')
+    except InvalidToken as e:
+        raise e
+    except Exception as e:
+        raise e
 
 # Password Hashing
 def hashpw(pw: str) -> str:

@@ -24,7 +24,7 @@ def register():
     else:
         return render_template("register.html",msg="")
         
-@app.route("/p/<postid",methods=["POST","GET"])
+@app.route("/p/<postid>",methods=["POST","GET"])
 def post(postid):
     if request.method == "GET":
         print()
@@ -58,6 +58,15 @@ def user(userid):
         except Exception as e:
             return jsonify({"status": "Failed","Error": str(e)})
 
+    
+@app.route("/verify/<userid>")
+def verify(userid):
+    userid = enc.decryptVerify(userid)
+    if not db.checkID(userid):
+        msg = "cannot find the user. Please check your Email for the link"
+
+
+    return render_template("verify.html",msg=msg)
 if __name__ == '__main__':
     app.run(debug=True,
             port=5000,
