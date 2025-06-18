@@ -12,9 +12,12 @@ from cryptography.fernet import InvalidToken
 
 import base64
 
+from typing_extensions import Literal
+
 dt = datetime.datetime.now(datetime.UTC)
 ph = argon2.PasswordHasher()
 
+enc_types = Literal['u','p']
 
 # --- Master Key Functions ---
 def createMK() -> None:
@@ -24,12 +27,10 @@ def createMK() -> None:
         os.makedirs(mk_dir)
     with open(os.path.join(mk_dir, "mk.key"), "wb") as f:
         f.write(k)
-    print("Master Key 'mk.key' created.")
 
 def getMK() -> bytes:
     mk_path = os.path.join("keys", "mk.key")
     if not os.path.exists(mk_path):
-        print("Master Key 'mk.key' not found. Creating it...")
         createMK()
     
     with open(mk_path, "rb") as f:
@@ -39,7 +40,7 @@ def getMK() -> bytes:
 
 def get_canonical_date_str(input_date: str) -> str:
     try:
-        parsed_date = datetime.datetime.strptime(input_date, "%Y-%m-%d").date()
+        parsed_date = datetime.datetime.strptime(str(input_date), "%Y-%m-%d").date()
     except ValueError:
         try:
             parsed_date = datetime.datetime.strptime(input_date, "%Y-%#m-%#d").date()
@@ -49,7 +50,7 @@ def get_canonical_date_str(input_date: str) -> str:
 
 
 # --- Everyday key functions ---
-def createKey(canonical_date_str: str) -> None:
+def createKey(canonical_date_str: str, encType :enc_types = "u") -> None:
     key_dir = "keys"
     if not os.path.exists(key_dir):
         os.makedirs(key_dir)
@@ -58,22 +59,24 @@ def createKey(canonical_date_str: str) -> None:
     
     mk = Fernet(getMK())
     enc_key = mk.encrypt(key_for_aesgcm)
-
-    key_filepath = os.path.join(key_dir, f"{canonical_date_str}.key")
+    if encType == "p":
+        key_filepath = os.path.join("keys",f"{canonical_date_str}_posts.key")
+    elif encType == "u":
+        key_filepath = os.path.join("keys",f"{canonical_date_str}_users.key")
     with open(key_filepath, "wb") as f:
         f.write(enc_key)
-    print(f"Created and saved new encrypted key to {key_filepath}")
 
-def loadKey(date: str = None) -> bytes:
+def loadKey(date: str = None, encType :enc_types = "u") -> bytes:
     if date is None:
         date_to_use = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
     else:
         date_to_use = get_canonical_date_str(date)
-
-    key_filepath = os.path.join("keys", f"{date_to_use}.key")
+    if encType == "p":
+        key_filepath = os.path.join("keys",f"{date_to_use}_posts.key")
+    elif encType == "u":
+        key_filepath = os.path.join("keys",f"{date_to_use}_users.key")
     mk = Fernet(getMK())
     
-    print(f"loadKey: Attempting to load key from: {key_filepath}")
 
     try:
         with open(key_filepath, "rb") as f:
@@ -103,13 +106,12 @@ def loadKey(date: str = None) -> bytes:
 
 
 # --- Encrypting ---
-def encrypt(data: str, date: str = None) -> str:
+def encrypt(data: str, date: str = None, encType :enc_types = "u") -> str:
     if date is None:
         date_for_key = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
     else:
         date_for_key = get_canonical_date_str(date)
-
-    key = loadKey(date_for_key)
+    key = loadKey(date_for_key,encType=encType)
 
     data_bytes = data.encode('utf-8')
     nonce = os.urandom(12)
@@ -120,13 +122,13 @@ def encrypt(data: str, date: str = None) -> str:
     return base64.urlsafe_b64encode(combined_data).decode('utf-8')
 
 
-def decrypt(data_b64_str: str, date: str = None) -> str:
+def decrypt(data_b64_str: str, date: str = None, encType :enc_types = "u") -> str:
     if date is None:
         date_for_key = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
     else:
         date_for_key = get_canonical_date_str(date)
 
-    key = loadKey(date_for_key)
+    key = loadKey(date_for_key,encType=encType)
 
     combined_data = base64.urlsafe_b64decode(data_b64_str.encode('utf-8'))
     nonce = combined_data[:12]
@@ -137,11 +139,9 @@ def decrypt(data_b64_str: str, date: str = None) -> str:
         dectext_bytes = aesgcm.decrypt(nonce=nonce, data=enctext_and_tag, associated_data="m7".encode())
         return dectext_bytes.decode('utf-8')
     except InvalidToken as e:
-        print(f"Decryption failed: {e} - Invalid tag or corrupted data/key/nonce/associated data.")
-        raise
+        raise e
     except Exception as e:
-        print(f"Decryption failed with unexpected error: {e}")
-        raise
+        raise e
         
 
 

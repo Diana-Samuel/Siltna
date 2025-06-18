@@ -7,58 +7,61 @@ import enc
 import pyconf
 conf = pyconf.read_ini("db.ini")
 
-conn = psycopg2.connect(
+userconn = psycopg2.connect(
                         database=conf["database"],
                         host=conf["host"],
                         user=conf["user"],
                         password=conf["password"],
                         port=conf["port"]
                        )
-cursor = conn.cursor()
+usercursor = userconn.cursor()
 
 
-def randomid():
-    id = random.randint(000000000,9999999999)
-    if len(str(id)) != 10:
-        diff = 10 - len(str(id))
-        id = str(id)
+def randomid(length: int) -> str:
+    minlen = ""
+    maxlen = ""
+    for i in range(int(length)):
+        minlen += "0"
+        maxlen += "9"
+    user_id = random.randint(int(minlen),int(maxlen))
+    if len(str(user_id)) != length:
+        diff = length - len(str(user_id))
+        user_id = str(user_id)
         for _ in range(diff):
-            id = "0" + id
-    return str(id)
+            user_id = "0" + user_id
+    return str(user_id)
 
 
-def checkID(id: str) -> bool:
-    cursor.execute("SELECT * FROM users WHERE id = %s LIMIT 1",(id,))
-    if cursor.fetchone():
+def checkID(user_id: str) -> bool:
+    usercursor.execute("SELECT * FROM users WHERE id = %s LIMIT 1",(user_id,))
+    if usercursor.fetchone():
         return True
     else:
         return False
 
 def checkEmail(email: str) -> bool:
-    cursor.execute("SELECT * FROM users WHERE email = %s LIMIT 1",(email,))
-    if cursor.fetchone():
+    usercursor.execute("SELECT * FROM users WHERE email = %s LIMIT 1",(email,))
+    if usercursor.fetchone():
         return True
     else:
         return False
 
 
-def getuserinfo(id: str) -> list:
-    cursor.execute("SELECT * FROM users WHERE id = %s",(id))
-    return cursor.fetchone()
-
-
+def getuserinfo(user_id: str) -> list:
+    usercursor.execute("SELECT * FROM users WHERE id = %s",(user_id, ))
+    return usercursor.fetchone()
 
 
 def adduserinfo(name: str, pw: str, email: str) -> bool:
     date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
 
-    id = randomid()
+    user_id = randomid(10)
 
     hashed_pw = enc.hashpw(pw)
-    email = enc.encrypt(email,date=date)
-    name = enc.encrypt(name,date=date)
+    email = enc.encrypt(email,date=date,encType="u")
+    name = enc.encrypt(name,date=date,encType="u")
 
-    if checkID(id):
+    if checkID(user_id):
         return False
     
     if checkEmail(email):
@@ -66,51 +69,51 @@ def adduserinfo(name: str, pw: str, email: str) -> bool:
     
 
     try:
-        cursor.execute("INSERT INTO users (id, name, email, password,verified,date) VALUES (%s,%s,%s,%s,%s,%s)",(id,name,email,hashed_pw,False,date))
-        cursor.connection.commit()
+        usercursor.execute("INSERT INTO users (id, name, email, password,verified,date) VALUES (%s,%s,%s,%s,%s,%s)",(user_id,name,email,hashed_pw,False,date))
+        usercursor.userconnection.commit()
         return True
     except Exception as e:
         print(f"Error inserting user: {e}")
-        cursor.connection.rollback()
+        usercursor.userconnection.rollback()
         return False
     
 
 
 
-def addPhone(id: str, phone: str) -> bool:
-    if not checkID(id):
+def addPhone(user_id: str, phone: str) -> bool:
+    if not checkID(user_id):
         return False
     
-    cursor.execute("SELECT date FROM users WHERE id = %s",(id,))
-    if cursor.fetchone():
-        data = cursor.fetchone()
+    usercursor.execute("SELECT date FROM users WHERE id = %s",(user_id,))
+    if usercursor.fetchone():
+        data = usercursor.fetchone()
         date = data[0]
-        phone = enc.encrypt(phone,date)
-        cursor.execute("INSERT INTO users (phone) VALUES (%s) WHERE ID = %s",(phone,id,))
+        phone = enc.encrypt(phone,date,encType="u")
+        usercursor.execute("INSERT INTO users (phone) VALUES (%s) WHERE ID = %s",(phone,user_id,))
         return True
     else:
         return False
     
 
-def addNote(id: str, note: str) -> bool:
-    if not checkID(id):
+def addNote(user_id: str, note: str) -> bool:
+    if not checkID(user_id):
         return False
     
-    cursor.execute("SELECT date FROM users WHERE id = %s",(id,))
-    if cursor.fetchone():
-        data = cursor.fetchone()
+    usercursor.execute("SELECT date FROM users WHERE id = %s",(user_id,))
+    if usercursor.fetchone():
+        data = usercursor.fetchone()
         date = data[0]
-        note = enc.encrypt(note,date)
-        cursor.execute("INSERT INTO users (note) VALUES (%s) WHERE ID = %s",(note,id,))
+        note = enc.encrypt(note,date,encType="u")
+        usercursor.execute("INSERT INTO users (note) VALUES (%s) WHERE ID = %s",(note,user_id,))
         return True
     else:
         return False
 
-def changeVerifiedValue(id: str, value: bool) -> bool:
-    if not checkID(id):
+def changeVerifiedValue(user_id: str, value: bool) -> bool:
+    if not checkID(user_id):
         return False
     try:    
-        cursor.execute("INSERT INTO users (verified) VALUES (%s) WHERE ID = %s",(value,id,))
+        usercursor.execute("INSERT INTO users (verified) VALUES (%s) WHERE ID = %s",(value,user_id,))
         return True
     except:
         return False

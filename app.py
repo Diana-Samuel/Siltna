@@ -1,4 +1,4 @@
-from flask import Flask, render_template, send_from_directory, request
+from flask import Flask, render_template, send_from_directory, request, jsonify
 import time
 
 import db
@@ -9,10 +9,6 @@ app = Flask(__name__)
 @app.route("/")
 def index():
     return render_template("/index.html")
-
-@app.route("/p/<userid>")
-def user(userid):
-    info = db.getinfo(enc.encuser(userid))
 
 @app.route("/register", methods=["POST","GET"])
 def register():
@@ -28,6 +24,40 @@ def register():
     else:
         return render_template("register.html",msg="")
         
+@app.route("/p/<postid",methods=["POST","GET"])
+def post(postid):
+    if request.method == "GET":
+        print()
+
+@app.route("/u/<userid>",methods=["POST","GET"])
+def user(userid):
+    if request.method == "GET":
+        if not db.checkID(userid):
+            return render_template("error404.html")
+        info = db.getuserinfo(userid)
+        date = info[-1]
+        date = date.strftime("%Y-%m-%d")
+        name = enc.decrypt(info[1],date=date,encType="u")
+        email = enc.decrypt(info[2],date=date,encType="u")
+
+        
+        return render_template("userinfo.html",info=f"<div><h1>Name: {name}</h1><p>Email: {email}</p></div>")
+    elif request.method == "POST":
+        try:
+            if not db.checkID(userid):
+                return jsonify({"status": "Failed","Error": "404"})
+            info = db.getuserinfo(userid)
+            date = info[-1]
+            date = date.strftime("%Y-%m-%d")
+            name = enc.decrypt(info[1],date=date,encType="u")
+            email = enc.decrypt(info[2],date=date,encType="u")
+            phone = info[3]
+            if phone != None:
+                phone = enc.decrypt(info[3],date=date,encType="u")
+            return jsonify({"status":"success","name": name,"email": email,"phone": phone})
+        except Exception as e:
+            return jsonify({"status": "Failed","Error": str(e)})
+
 if __name__ == '__main__':
     app.run(debug=True,
             port=5000,
