@@ -51,6 +51,9 @@ def getuserinfo(user_id: str) -> list:
     usercursor.execute("SELECT * FROM users WHERE id = %s",(user_id, ))
     return usercursor.fetchone()
 
+def getuserinfo_byemail(email: str) -> list:
+    usercursor.execute("SELECT * FROM users WHERE email = %s",(email, ))
+    return usercursor.fetchone()
 
 def adduserinfo(name: str, pw: str, email: str) -> bool:
     date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
@@ -80,11 +83,18 @@ def adduserinfo(name: str, pw: str, email: str) -> bool:
 
 def verify(userid:str) -> bool:
     try:
-        usercursor.execute("UPDATE users SET verifed = True WHERE id = ?",(userid,))
+        usercursor.execute("UPDATE users SET verifed = True WHERE id = %s",(userid, ))
         usercursor.connection.commit()
     except Exception as e:
         raise e
 
+def checkVerified(userid: str) -> bool:
+    try:
+        usercursor.execute("SELECT * FROM users WHERE id = %s",(userid, ))
+        verified = usercursor.fetchone()[5]
+        return verified
+    except:
+        return False
 
 def addPhone(user_id: str, phone: str) -> bool:
     if not checkID(user_id):
