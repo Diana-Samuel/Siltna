@@ -2,9 +2,36 @@
 
 <html>
     <head>
-
+        <style>
+            #createPost {
+                display: none;
+            }
+        </style>
     </head>
     <body>
-        
+        <h2>{{ msg }}</h2>
+        <button onclick="postPopup()">Create New Post</button>
+        <div id="createPost">
+            <form action="" method="POST" enctype="multipart/form-data">
+                <div>
+                    <input name="text" type="text">
+                </div>
+                <div>
+                    <input name="file" type="file" multiple>
+                </div>
+                <input type="text" name="createpost" style="display: none;">
+                <button type="submit" id="createPostSubmit">Create Post</button>
+            </form>
+        </div>
+        <script>
+            function postPopup() {
+                const postpopup = document.querySelector("#createPost");
+                postpopup.style.display = "block";
+            }
+            document.querySelector("#createPostSubmit").addEventListener("click", () => {
+                const postpopup = document.querySelector("#createPost");
+                postpopup.style.display = "none";
+            })
+        </script>
     </body>
 </html>

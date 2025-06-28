@@ -1,0 +1,6 @@
+flask
+pillow
+psycopg2
+argon2
+bcrypt
+cryptography

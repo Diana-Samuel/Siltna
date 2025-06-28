@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+
+    </head>
+    <body>
+        <div>{{ msg }}</div>
+        <div class="post">
+            <div class="text">
+                {{ text }}
+            </div>
+            <div class="images">
+                {% for i in images %}
+                {{ i | safe }}
+                {% endfor %}
+            </div>
+        </div>            
+    </body>
+</html>

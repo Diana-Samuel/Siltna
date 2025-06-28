@@ -17,7 +17,7 @@ from typing_extensions import Literal
 dt = datetime.datetime.now(datetime.UTC)
 ph = argon2.PasswordHasher()
 
-enc_types = Literal['u','p']
+enc_types = Literal['u','p','email']
 
 # --- Master Key Functions ---
 def createMK() -> None:
@@ -65,6 +65,7 @@ def createKey(canonical_date_str: str, encType :enc_types = "u") -> None:
         key_filepath = os.path.join("keys",f"{canonical_date_str}_users.key")
     with open(key_filepath, "wb") as f:
         f.write(enc_key)
+    return key_filepath
 
 def loadKey(date: str = None, encType :enc_types = "u") -> bytes:
     if date is None:
@@ -77,7 +78,6 @@ def loadKey(date: str = None, encType :enc_types = "u") -> bytes:
         key_filepath = os.path.join("keys",f"{date_to_use}_users.key")
     mk = Fernet(getMK())
     
-
     try:
         with open(key_filepath, "rb") as f:
             encrypted_key_from_file = f.read()
@@ -85,7 +85,7 @@ def loadKey(date: str = None, encType :enc_types = "u") -> bytes:
         decrypted_aesgcm_key = mk.decrypt(encrypted_key_from_file)
         
     except FileNotFoundError:
-        createKey(date_to_use)
+        key_filepath = createKey(date_to_use,encType=encType)
         try:
             with open(key_filepath, "rb") as f:
                 encrypted_key_from_file = f.read()
@@ -105,7 +105,12 @@ def loadKey(date: str = None, encType :enc_types = "u") -> bytes:
     return decrypted_aesgcm_key
 
 
+
+
 # --- Encrypting ---
+"""
+TEXT ENCRYPTION
+"""
 def encrypt(data: str, date: str = None, encType :enc_types = "u") -> str:
     if date is None:
         date_for_key = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
@@ -114,7 +119,10 @@ def encrypt(data: str, date: str = None, encType :enc_types = "u") -> str:
     key = loadKey(date_for_key,encType=encType)
 
     data_bytes = data.encode('utf-8')
-    nonce = os.urandom(12)
+    if encType == "email":
+        nonce = b'\x0f\r@\x1aa\x9b62\xc5\x85\x9c\x04'
+    else:
+        nonce = os.urandom(12)
     aesgcm = AESGCM(key)
     enctext_and_tag = aesgcm.encrypt(nonce=nonce, data=data_bytes, associated_data="m7".encode())
     combined_data = nonce + enctext_and_tag
@@ -144,6 +152,12 @@ def decrypt(data_b64_str: str, date: str = None, encType :enc_types = "u") -> st
         raise e
         
 
+
+
+
+"""
+VERIFY LINK ENCRYPTION
+"""
 def encryptVerify(data: str) -> str:
     key = b'N\xfe\xd9\x84\xf3x\xab\xbd\xf9\xcf\xf9Bz"k\xe5\xab]\x15\x0e\x00\xc8\xd8S\xe7/?\x8d\x8f\xc5\x04\t'
 
@@ -172,19 +186,72 @@ def decryptVerify(data_b64_str: str) -> str:
     except Exception as e:
         raise e
 
+
+
+
+
+"""
+FILE ENCRYPTION
+"""
+def encryptFile(path: str, date: str) -> str:
+    if date is None:
+        date_for_key = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    else:
+        date_for_key = get_canonical_date_str(date)
+
+    key = loadKey(date_for_key, "p")
+    with open(path, 'rb') as f:
+        data_bytes = f.read()
+
+    nonce = os.urandom(12)
+    aesgcm = AESGCM(key)
+    encrypted = aesgcm.encrypt(nonce=nonce, data=data_bytes, associated_data=b"m7")
+    combined_data = nonce + encrypted
+    return base64.urlsafe_b64encode(combined_data).decode('utf-8')    
+
+
+def decryptFile(encoded_data, date=None):
+    if date is None:
+        date_for_key = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    else:
+        date_for_key = get_canonical_date_str(date)
+
+    key = loadKey(date_for_key, encType='p')
+
+    combined_data = base64.urlsafe_b64decode(encoded_data.encode('utf-8'))
+    nonce = combined_data[:12]
+    encrypted_data = combined_data[12:]
+
+    aesgcm = AESGCM(key)
+    decrypted_data = aesgcm.decrypt(nonce=nonce, data=encrypted_data, associated_data=b"m7")
+
+    return decrypted_data
+
+
+
+
+
+
+
+
+
+
+"""
+PASSWORD HASHING
+"""
 # Password Hashing
 def hashpw(pw: str) -> str:
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(pw.encode(),salt)
-    hashed2 = ph.hash(hashed)
-    return hashed2
+    salt = bcrypt.gensalt(12)
+    bcrypt_hash = bcrypt.hashpw(pw.encode(), salt)
+    final_hash = ph.hash(bcrypt_hash.decode())
+    final_hash = salt.decode() + final_hash
+    return final_hash
 
-def checkpw(pw: str,hashedpw: str) -> bool:
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(pw.encode(),salt)
+def checkpw(pw: str, stored_hash: str) -> bool:
     try:
-        if ph.verify(hashed,hashedpw):
-            return True
+        salt = stored_hash[:29].encode()
+        stored_hash = stored_hash[29:]
+        bcrypt_hash = bcrypt.hashpw(pw.encode(), salt)
+        return ph.verify(stored_hash, bcrypt_hash.decode())
     except argon2.exceptions.VerifyMismatchError:
         return False
-

@@ -13,15 +13,15 @@
                 <div id="login-signup-button-cover"></div>
             </div>
             <div id="login-form">
-                <form>
-                    <input type="email" placeholder="Enter email" required autocomplete="email"/>
-                    <input type="password" placeholder="Enter password" required autocomplete="current-password"/>
+                <form method="POST">
+                    <input name="email" type="email" placeholder="Enter email" required autocomplete="email"/>
+                    <input name="password" type="password" placeholder="Enter password" required autocomplete="current-password"/>
                     <input name="login" style="display: none;">
                     <button type="submit" class="btn login">login</button>
                </form>
             </div>
             <div id="signup-form">
-                <form>
+                <form method="POST">
                     <input name="name" type="text" placeholder="Choose username" required autocomplete="name"/>
                     <input name="email" type="email" placeholder="Enter your email" required autocomplete="email"/>
                     <input name="password" type="password" placeholder="Create password" required autocomplete="new-password"/>
