@@ -177,7 +177,7 @@ def createPost(text: str, images: list, userid: str) -> bool:
         return False
     withImages = len(images) > 0
     withText = len(text) > 0
-    
+
     if not checkID(userid, "u"):
         return False
 
@@ -187,7 +187,6 @@ def createPost(text: str, images: list, userid: str) -> bool:
     if withText:
         encText = enc.encrypt(text, date, "p")
 
-    print(images)
     encImages = []
     if withImages:
         for i in images:

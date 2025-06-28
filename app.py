@@ -50,7 +50,7 @@ def index():
                     raise e
                 finally:
                     for i,file in enumerate(fileList):
-                        os.remove(os.path.join(os.path.join('static','uploads'),f"{i}_{session['id']}_{filename}"))
+                        os.remove(file)
                     return render_template("index.html",msg="Post created")
             else:
                 return render_template("index.html",msg="Please log in before making a post")
@@ -69,15 +69,11 @@ def auth():
         pw = request.form["password"]
         email = request.form["email"]
         date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
-        print("Data retrieved")
         pwStatus, msg = checkPass(pw)
         if not pwStatus:
-            print(f"Password Problem {msg}")
             return render_template("auth.html",msg=msg)
-        print("[registeration] Password Passed")
         regStatus, userid = db.adduserinfo(name,pw,email)
         if regStatus:
-            print("[registeration] Added info")
             msg = "Registeration Completed Successfully"
             verf.sendLink(email,f"{enc.encryptVerify(db.getuserinfo_byemail(email)[1])}")
             return render_template("auth.html",msg=msg)
@@ -90,7 +86,6 @@ def auth():
         if not db.checkEmail(email):
             return render_template("auth.html",msg="There is no accounts associated with that email address")
         
-        print(f"[Login] Retrived Data: {db.getuserinfo_byemail(email)}")
         if enc.checkpw(pw,db.getuserinfo_byemail(email)[4]):
             if not db.checkVerified(db.getuserinfo_byemail(email=email)[0]):
                 return render_template("auth.html",msg="You are not verified")            
@@ -149,9 +144,9 @@ def postImage(postid,i):
             imageData = enc.decryptFile(image[int(i)],date=date)
             return send_file(BytesIO(imageData),mimetype="image/png")
         else:
-            return send_file("/static/images/catmeme.webp")
+            return send_file("static/images/catmeme.webp",mimetype="image/*")
     except IndexError:
-        return send_file("/static/images/catmeme.webp")
+        return send_file("static/images/catmeme.webp",mimetype="image/*")
 
 
 
