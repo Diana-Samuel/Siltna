@@ -4,14 +4,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <head>
         <style>
+            body {
+                background-color: #0B0F1A;
+                color: #0B0F1A;
+            }
             #createPost {
                 display: none;
             }
             .post {
-                width: calc((100% / 3) * 1.618);
+                width: calc((100% / 4) * 1.618);
+                height: fit-content;
+                background-color: #3B82F6;
             }
-            .post img:first-child
-            .post img:seco
+            .postImage {
+                display: grid;
+                gap: 4px;
+                margin-bottom: 1rem;
+            }
+
+            .postImage.one-image {
+                grid-template-columns: 1fr;
+            }
+
+            .postImage.two-images {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .postImage.three-images {
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: auto auto;
+            }
+
+            .postImage.four-images {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .postImage img {
+                width: 100%;
+                height: auto;
+                object-fit: cover;
+                border-radius: 6px;
+            }
+
+
         </style>
     </head>
     <body>
@@ -51,10 +86,24 @@
                         if (data["status"] == "success") {
                             let posts = data["posts"];
                             let final = [];
-                            posts.forEach(post => {
+                            posts.forEach(info => {
+                                let post = info[1];
                                 let text = post[0];
                                 let images = post[1];
-                                let htmlPost = "<div class='post'><h3>"+text+"</h3><div class='postImages'>"+images+"</div></div>";
+                                let postdate = post[2];
+                                let postername = info[0][1]
+                                let posterid = info[0][0]
+                                let htmlPost = "<div class='post'><div class='posterInfo'><a href='/u/"
+                                                +posterid+
+                                                "'>"
+                                                +postername+
+                                                "</a><span>"
+                                                +postdate+
+                                                "</span></div><h3>"
+                                                +text+
+                                                "</h3><div class='postImages'>"
+                                                +images+
+                                                "</div></div>";
                                 final.push(htmlPost);
                             });
                             document.querySelector("#PostSection").innerHTML += final.join("");
@@ -64,6 +113,23 @@
             document.addEventListener("DOMContentLoaded",() => {
                 AddPosts();
             })
+
+            document.querySelectorAll('.postImage').forEach(post => {
+                const count = post.querySelectorAll('img').length;
+
+                // Clear any existing classes
+                post.classList.remove('one-image', 'two-images', 'three-images', 'four-images');
+
+                if (count === 1) {
+                    post.classList.add('one-image');
+                } else if (count === 2) {
+                    post.classList.add('two-images');
+                } else if (count === 3) {
+                    post.classList.add('three-images');
+                } else if (count >= 4) {
+                    post.classList.add('four-images');
+                }
+            });
         </script>
     </body>
 </html>

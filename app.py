@@ -76,6 +76,7 @@ def getposts():
             for i in posts:
                 post = []
                 postid = i[0]
+                posterid = i[1]
                 date = i[-2]
                 text = i[2]
                 image = i[3]
@@ -89,7 +90,12 @@ def getposts():
                     text = ""
                 post.append(text)
                 post.append(images)
-                decPosts.append(post)
+                post.append(str(date))
+                posterdata = db.getuserinfo(posterid)
+                postdate = posterdata[-2]
+                postername = enc.decrypt(posterdata[1],postdate,'u')
+                poster = [posterid,postername]
+                decPosts.append([poster,post])
             return jsonify({"status":"success","posts": decPosts})
         except Exception as e:
             print(f"Get POSTS {e}")
@@ -180,9 +186,10 @@ def postImage(postid,i):
             imageData = enc.decryptFile(image[int(i)],date=date)
             return send_file(BytesIO(imageData),mimetype="image/png")
         else:
-            return send_file("static/images/catmeme.webp",mimetype="image/*")
+            print(f"Error rendering image {data}")
+            return send_file("static/images/notfound.png",mimetype="image/*")
     except IndexError:
-        return send_file("static/images/catmeme.webp",mimetype="image/*")
+        return send_file("static/images/notfound.png",mimetype="image/*")
 
 
 
@@ -195,7 +202,7 @@ def user(userid):
         date = info[-2]
         date = date.strftime("%Y-%m-%d")
         name = enc.decrypt(info[1],date=date,encType="u")
-        email = enc.decrypt(info[2],date=date,encType="u")
+        email = info[2]
 
         
         return render_template("userinfo.html",info=f"<div><h1>Name: {name}</h1><p>Email: {email}</p></div>")
