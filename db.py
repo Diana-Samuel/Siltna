@@ -18,7 +18,20 @@ userconn = psycopg2.connect(
                         password=conf["password"],
                         port=conf["port"]
                        )
+
 usercursor = userconn.cursor()
+
+def conn():
+    global userconn,usercursor
+    userconn = psycopg2.connect(
+                            database=conf["database"],
+                            host=conf["host"],
+                            user=conf["user"],
+                            password=conf["password"],
+                            port=conf["port"]
+                        )
+
+    usercursor = userconn.cursor()
 
 
 def randomid(length: int) -> str:
@@ -57,105 +70,158 @@ def checkID(user_id: str,idtype: Literal["u","p"] = "u") -> bool:
 USER TABLE CONTENT
 """
 def checkEmail(email: str) -> bool:
-    usercursor.execute("SELECT * FROM users WHERE email = %s LIMIT 1",(email,))
-    try:
-        if usercursor.fetchone():
-            return True
-        else:
-            return False
-    except psycopg2.ProgrammingError:
-        return False
+    while True:
+        try:
+            usercursor.execute("SELECT * FROM users WHERE email = %s LIMIT 1",(email,))
+            try:
+                if usercursor.fetchone():
+                    return True
+                else:
+                    return False
+            except psycopg2.ProgrammingError:
+                return False
+        except psycopg2.OperationalError:
+            conn()
 
 
 def getuserinfo(user_id: str) -> list:
-    usercursor.execute("SELECT * FROM users WHERE id = %s",(user_id, ))
-    return usercursor.fetchone()
+    while True:
+        try:
+            try:
+                usercursor.execute("SELECT * FROM users WHERE id = %s",(user_id, ))
+                return usercursor.fetchone()
+            except psycopg2.OperationalError:
+                conn()
+            except Exception as e:
+                print("Database Error: {e}")
+                usercursor.connection.rollback()
+                raise
+        except psycopg2.OperationalError:
+            conn()
 
 def getuserinfo_byemail(email: str) -> list:
-    usercursor.execute("SELECT * FROM users WHERE email = %s",(email, ))
-    data = usercursor.fetchone()
-    if data:
-        return data
-    else:
-        raise ConnectionError("Cannot find the email address")
+    while True:
+        try:
+            try:
+                usercursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+                data = usercursor.fetchone()
+                if data:
+                    return data
+                else:
+                    raise ValueError("Cannot find the email address")
+            except psycopg2.OperationalError:
+                conn()
+            except Exception as e:
+                print(f"Database error: {e}")
+                usercursor.connection.rollback()
+                raise
+        except psycopg2.OperationalError:
+            conn()
+
 
 def adduserinfo(name: str, pw: str, email: str) -> bool:
-    date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    while True:
+        try:
+            date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+            while True:
+                user_id = randomid(10)
+                if not checkID(user_id, "u"):
+                    break
 
-    user_id = randomid(10)
+            hashed_pw = enc.hashpw(pw)
+            name = enc.encrypt(name,date=date,encType="u")
 
-    hashed_pw = enc.hashpw(pw)
-    name = enc.encrypt(name,date=date,encType="u")
+            if checkID(user_id):
+                return False, None
+            
+            if checkEmail(email):
+                return False, None
 
-    if checkID(user_id):
-        return False, None
-    
-    if checkEmail(email):
-        return False, None
-
-    try:
-        usercursor.execute("INSERT INTO users (id, name, email, password,verified,date) VALUES (%s,%s,%s,%s,%s,%s)",(user_id,name,email,hashed_pw,False,date))
-        usercursor.connection.commit()
-        return True, user_id
-    except Exception as e:
-        print(f"Error inserting user: {e}")
-        usercursor.connection.rollback()
-        return False, None
+            try:
+                usercursor.execute("INSERT INTO users (id, name, email, password,verified,date,following) VALUES (%s,%s,%s,%s,%s,%s,%s)",(user_id,name,email,hashed_pw,False,date,[],))
+                usercursor.connection.commit()
+                createInterest(user_id)
+                return True, user_id
+            except psycopg2.OperationalError:
+                conn()
+            except Exception as e:
+                print(f"Error inserting user: {e}")
+                usercursor.connection.rollback()
+                return False, None
+        except psycopg2.OperationalError:
+            conn()
     
 
 def verify(userid:str) -> bool:
-    try:
-        usercursor.execute("UPDATE users SET verifed = True WHERE id = %s",(userid, ))
-        usercursor.connection.commit()
-    except Exception as e:
-        raise e
+    while True:
+        try:
+            usercursor.execute("UPDATE users SET verifed = True WHERE id = %s",(userid, ))
+            usercursor.connection.commit()
+        except psycopg2.OperationalError:
+            conn()
+        except Exception as e:
+            raise e
 
 def checkVerified(userid: str) -> bool:
-    try:
-        usercursor.execute("SELECT * FROM users WHERE id = %s",(userid, ))
-        verified = usercursor.fetchone()[5]
-        return verified
-    except:
-        return False
+    while True:
+        try:
+            usercursor.execute("SELECT * FROM users WHERE id = %s",(userid, ))
+            verified = usercursor.fetchone()[5]
+            return verified
+        except psycopg2.OperationalError:
+            conn()
+        except:
+            return False
 
 def addPhone(user_id: str, phone: str) -> bool:
-    if not checkID(user_id):
-        return False
-    
-    usercursor.execute("SELECT date FROM users WHERE id = %s",(user_id,))
-    if usercursor.fetchone():
-        data = usercursor.fetchone()
-        date = data[0]
-        phone = enc.encrypt(phone,date,encType="u")
-        usercursor.execute("INSERT INTO users (phone) VALUES (%s) WHERE ID = %s",(phone,user_id,))
-        return True
-    else:
-        return False
+    while True:
+        try:
+            if not checkID(user_id):
+                return False
+            
+            usercursor.execute("SELECT date FROM users WHERE id = %s",(user_id,))
+            if usercursor.fetchone():
+                data = usercursor.fetchone()
+                date = data[-2]
+                phone = enc.encrypt(phone,date,encType="u")
+                usercursor.execute("INSERT INTO users (phone) VALUES (%s) WHERE ID = %s",(phone,user_id,))
+                return True
+            else:
+                return False
+        except psycopg2.OperationalError:
+            conn()
     
 
 def addNote(user_id: str, note: str) -> bool:
-    if not checkID(user_id):
-        return False
-    
-    usercursor.execute("SELECT date FROM users WHERE id = %s",(user_id,))
-    if usercursor.fetchone():
-        data = usercursor.fetchone()
-        date = data[0]
-        note = enc.encrypt(note,date,encType="u")
-        usercursor.execute("INSERT INTO users (note) VALUES (%s) WHERE ID = %s",(note,user_id,))
-        return True
-    else:
-        return False
+    while True:
+        try:
+            if not checkID(user_id):
+                return False
+            
+            usercursor.execute("SELECT date FROM users WHERE id = %s",(user_id,))
+            if usercursor.fetchone():
+                data = usercursor.fetchone()
+                date = data[-2]
+                note = enc.encrypt(note,date,encType="u")
+                usercursor.execute("INSERT INTO users (note) VALUES (%s) WHERE ID = %s",(note,user_id,))
+                return True
+            else:
+                return False
+        except psycopg2.OperationalError:
+            conn()
 
 def changeVerifiedValue(user_id: str, value: bool) -> bool:
-    if not checkID(user_id):
-        return False
-    try:    
-        usercursor.execute("INSERT INTO users (verified) VALUES (%s) WHERE ID = %s",(value,user_id,))
-        return True
-    except:
-        return False
-
+    while True:
+        try:
+            if not checkID(user_id):
+                return False
+            try:    
+                usercursor.execute("INSERT INTO users (verified) VALUES (%s) WHERE ID = %s",(value,user_id,))
+                return True
+            except:
+                return False
+        except psycopg2.OperationalError:
+            conn()
 
 """
 -------------------------------------------------------------------------------------------------------------------
@@ -170,84 +236,123 @@ POST TABLE CONTENT
 
 def createPost(text: str, images: list, userid: str) -> bool:
     while True:
-        postid = randomid(32)
-        if not checkID(postid, "p"):
-            break
-    if len(images) <= 0 and len(text.strip()) <= 0:
-        return False
-    withImages = len(images) > 0
-    withText = len(text) > 0
-
-    if not checkID(userid, "u"):
-        return False
-
-    date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
-
-    encText = None
-    if withText:
-        encText = enc.encrypt(text, date, "p")
-
-    encImages = []
-    if withImages:
-        for i in images:
-            encrypted_file_path = enc.encryptFile(i, date)
-            encImages.append(encrypted_file_path)
-    encImages_json = json.dumps(encImages)
-    try:
-        if withText and withImages:
-            usercursor.execute("INSERT INTO posts (id, poster_id, text, images, date) VALUES (%s,%s,%s,%s,%s)", (postid, userid, encText, encImages_json, date))
-        elif withText:
-            usercursor.execute("INSERT INTO posts (id, poster_id, text, date) VALUES (%s,%s,%s,%s)", (postid, userid, encText, date))
-        elif withImages:
-            usercursor.execute("INSERT INTO posts (id, poster_id, images, date) VALUES (%s,%s,%s,%s)", (postid, userid, encImages_json, date))
-        else:
+        while True:
+            postid = randomid(32)
+            if not checkID(postid, "p"):
+                break
+        if len(images) <= 0 and len(text.strip()) <= 0:
             return False
-        usercursor.connection.commit()
-        return True
-    except Exception as e:
-        usercursor.connection.rollback()
-        return False
+        withImages = len(images) > 0
+        withText = len(text) > 0
+
+        if not checkID(userid, "u"):
+            return False
+
+        date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+
+        encText = None
+        if withText:
+            encText = enc.encrypt(text, date, "p")
+
+        encImages = []
+        if withImages:
+            for i in images:
+                encrypted_file_path = enc.encryptFile(i, date)
+                encImages.append(encrypted_file_path)
+        encImages_json = json.dumps(encImages)
+        try:
+            if withText and withImages:
+                usercursor.execute("INSERT INTO posts (id, poster_id, text, images, date,tags) VALUES (%s,%s,%s,%s,%s,%s)", (postid, userid, encText, encImages_json, date,["text","image"]))
+            elif withText:
+                usercursor.execute("INSERT INTO posts (id, poster_id, text, date,tags) VALUES (%s,%s,%s,%s,%s)", (postid, userid, encText, date,["text"]))
+            elif withImages:
+                usercursor.execute("INSERT INTO posts (id, poster_id, images, date,tags) VALUES (%s,%s,%s,%s,%s)", (postid, userid, encImages_json, date,["image"]))
+            else:
+                return False
+            usercursor.connection.commit()
+            return True
+        except psycopg2.OperationalError:
+            conn()
+        except Exception as e:
+            usercursor.connection.rollback()
+            return False
 
 
 def getRandomPosts(limit=20):
-    usercursor.execute("SELECT * FROM posts ORDER BY RANDOM() LIMIT %s",(limit,))
-    rawdata = usercursor.fetchall()
-    data = []
-    for i in rawdata:
-        temp = []
-        for j in i:
-            temp.append(j)
-        data.append(temp)
+    while True:
+        try:
+            usercursor.execute("SELECT * FROM posts ORDER BY RANDOM() LIMIT %s",(limit,))
+            rawdata = usercursor.fetchall()
+            data = []
+            for i in rawdata:
+                temp = []
+                for j in i:
+                    temp.append(j)
+                data.append(temp)
 
-    return data
+            return data
+        except psycopg2.OperationalError:
+            conn()
 
 def getPost(postid:str) -> list:
-    if checkID(postid,idtype="p"):
-        usercursor.execute("SELECT * FROM posts WHERE id = %s",(postid,))
-        data = usercursor.fetchone()
-        l = []
-        for i in data:
-            l.append(i)
-
-        return True,l
-    return False,[]
-
-
-
-
-
+    while True:
+        try:
+            if checkID(postid,idtype="p"):
+                usercursor.execute("SELECT * FROM posts WHERE id = %s",(postid,))
+                data = usercursor.fetchone()
+                l = []
+                for i in data:
+                    l.append(i)
+                return True,l
+            return False,[]
+        except psycopg2.OperationalError:
+            conn()
 
 
+"""
+Interests Table (algorithm)
+"""
+def createInterest(userid):
+    while True:
+        try:
+            if checkID(userid,"u"):
+                usercursor.execute("INSERT INTO interests (userId,tags) VALUES (%s,%s)",(userid,[]))
+                usercursor.connection.commit()
+                return True
+        except psycopg2.OperationalError:
+                conn()
+        except Exception as e:
+            print(f"[Create Interest] Error: {e}")
+            return False
 
+def addInterest(userid: str, interest: str) -> bool:
+    while True:
+        try:
+            if checkID(userid,"u"):
+                usercursor.execute("SELECT * FROM interests WHERE userId = %s",userid)
+            else:
+                raise KeyError("Couldn't Find User assotiated with that ID")
+            data = usercursor.fetchone()
+            tags = data[1]
+            tags.append(interest)
+            usercursor.execute("INSERT INTO interests (tags) VALUES (%s) WHERE userId = %s",(tags,userid,))
+            usercursor.connection.commit()
+            return True
+        except psycopg2.OperationalError:
+            conn()
+        except Exception as e:
+            print(f"[Add Interest] Error adding interests: {e}")
+            return False
 
-
-
-
-
-
-
-
-
-
-
-
+def getInterests(userid: str) -> list:
+    while True:
+        try:
+            if checkID(userid,"u"):
+                usercursor.execute("SELECT * FROM interests WHERE userId = %s", (userid,))
+            else:
+                raise KeyError("Couldn't Find User assotiated with that ID")
+            data = usercursor.fetchone()
+            tags = data[1]
+            return tags
+        except psycopg2.OperationalError:
+            conn()

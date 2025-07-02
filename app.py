@@ -11,6 +11,7 @@ from io import BytesIO
 
 import db
 import enc
+import algorithm as alg
 import verify as verf
 from utils import *
 from exception import UploadError
@@ -59,11 +60,47 @@ def index():
     else:
         return render_template("index.html")
 
+@app.route("/getPosts",methods=["GET"])
+def getposts():
+    if request.method == "GET":
+        try:
+            if not session["loggedin"] == True:
+                return jsonify({"status":"failed","error":"You Must be logged in"})
+        except KeyError:
+            return jsonify({"status":"failed","error":"You Must be logged in"})
+
+        try:
+            userid = session["id"]
+            posts = alg.postArrange(db.getRandomPosts(),userid)
+            decPosts = []
+            for i in posts:
+                post = []
+                postid = i[0]
+                date = i[-2]
+                text = i[2]
+                image = i[3]
+                if len(image) > 0:
+                    images = []
+                    for i in range(len(image)):
+                        images.append(f"<img src='/p/{postid}/i/{i}'>")
+                if len(text) > 0:
+                    text = enc.decrypt(text,date,'p')
+                else:
+                    text = ""
+                post.append(text)
+                post.append(images)
+                decPosts.append(post)
+            return jsonify({"status":"success","posts": decPosts})
+        except Exception as e:
+            print(f"Get POSTS {e}")
+            raise
+            return jsonify({"status":"failed","error": str(e)})
+        
 
 @app.route("/auth", methods=["POST","GET"])
 def auth():
     if session:
-        return url_for(index)    
+        return redirect(url_for("index"))    
     if request.method == "POST" and "name" in request.form:
         name = request.form["name"]
         pw = request.form["password"]
@@ -75,7 +112,7 @@ def auth():
         regStatus, userid = db.adduserinfo(name,pw,email)
         if regStatus:
             msg = "Registeration Completed Successfully"
-            verf.sendLink(email,f"{enc.encryptVerify(db.getuserinfo_byemail(email)[1])}")
+            verf.sendLink(email,f"{enc.encryptVerify(db.getuserinfo(userid)[1])}")
             return render_template("auth.html",msg=msg)
         else:
             return render_template("auth.html",msg="Error registering")
@@ -103,6 +140,7 @@ def auth():
 @app.route("/logout")
 def logout():
     session.clear()
+    return redirect(url_for("index"))
 
 
 
@@ -114,7 +152,7 @@ def post(postid):
         if success:
             image = data[3]
             text = data[2]
-            date = data[-1]
+            date = data[-2]
 
             date = date.strftime("%Y-%m-%d")
 
@@ -122,12 +160,10 @@ def post(postid):
                 images = []
                 for i in range(len(image)):
                     images.append(f"<img src='/p/{postid}/i/{i}'>")
-
             if len(text) > 0:
                 text = enc.decrypt(text,date,'p')
             else:
                 text = ""
-            
             return render_template("post.html",images=images,text=text)
         else:
             return render_template("post.html",msg = "Failed")
@@ -139,7 +175,7 @@ def postImage(postid,i):
     try:
         if success:
             image = data[3]
-            date = data[-1]
+            date = data[-2]
             
             imageData = enc.decryptFile(image[int(i)],date=date)
             return send_file(BytesIO(imageData),mimetype="image/png")
@@ -156,7 +192,7 @@ def user(userid):
         if not db.checkID(userid):
             return render_template("error404.html")
         info = db.getuserinfo(userid)
-        date = info[-1]
+        date = info[-2]
         date = date.strftime("%Y-%m-%d")
         name = enc.decrypt(info[1],date=date,encType="u")
         email = enc.decrypt(info[2],date=date,encType="u")
@@ -168,7 +204,7 @@ def user(userid):
             if not db.checkID(userid):
                 return jsonify({"status": "Failed","Error": "404"})
             info = db.getuserinfo(userid)
-            date = info[-1]
+            date = info[-2]
             date = date.strftime("%Y-%m-%d")
             name = enc.decrypt(info[1],date=date,encType="u")
             email = info[2]

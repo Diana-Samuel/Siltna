@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 
 <html>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <head>
         <style>
             #createPost {
                 display: none;
             }
+            .post {
+                width: calc((100% / 3) * 1.618);
+            }
+            .post img:first-child
+            .post img:seco
         </style>
     </head>
     <body>
@@ -23,6 +29,11 @@
                 <button type="submit" id="createPostSubmit">Create Post</button>
             </form>
         </div>
+        <center>
+            <div id="PostSection">
+
+            </div>
+        </center>
         <script>
             function postPopup() {
                 const postpopup = document.querySelector("#createPost");
@@ -31,6 +42,27 @@
             document.querySelector("#createPostSubmit").addEventListener("click", () => {
                 const postpopup = document.querySelector("#createPost");
                 postpopup.style.display = "none";
+            })
+            function AddPosts() {
+                fetch("/getPosts")
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log(data);
+                        if (data["status"] == "success") {
+                            let posts = data["posts"];
+                            let final = [];
+                            posts.forEach(post => {
+                                let text = post[0];
+                                let images = post[1];
+                                let htmlPost = "<div class='post'><h3>"+text+"</h3><div class='postImages'>"+images+"</div></div>";
+                                final.push(htmlPost);
+                            });
+                            document.querySelector("#PostSection").innerHTML += final.join("");
+                        }
+                    });
+            }
+            document.addEventListener("DOMContentLoaded",() => {
+                AddPosts();
             })
         </script>
     </body>
