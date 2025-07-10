@@ -44,23 +44,28 @@ def randomid(length: int) -> str:
     return str(user_id)
 
 def checkID(user_id: str,idtype: Literal["u","p"] = "u") -> bool:
-    if idtype == "u":
-        table = "users"
-    elif idtype == "p":
-        table = "posts"
-    else:
-        table = "users"
-
-    with userconn.cursor() as cursor:
-        cursor.execute(f"SELECT * FROM {table} WHERE id = %s LIMIT 1",(user_id,))
+    while True:
+        if idtype == "u":
+            table = "users"
+        elif idtype == "p":
+            table = "posts"
+        else:
+            table = "users"
         try:
-            if cursor.fetchone():
-                return True
-            else:
-                return False
+            with userconn.cursor() as cursor:
+                cursor.execute(f"SELECT * FROM {table} WHERE id = %s LIMIT 1",(user_id,))
+
+                if cursor.fetchone():
+                    return True
+                else:
+                    return False
         except psycopg2.ProgrammingError as e:
             print(f"psycopg2.ProgrammingError: {e}")
             return False
+        except psycopg2.OperationalError:
+            conn()
+        except psycopg2.InterfaceError:
+            conn()
 
 
 """
@@ -80,6 +85,8 @@ def checkEmail(email: str) -> bool:
                     return False
         except psycopg2.OperationalError:
             conn()
+        except psycopg2.InterfaceError:
+            conn()
 
 
 def getuserinfo(user_id: str) -> list:
@@ -96,6 +103,8 @@ def getuserinfo(user_id: str) -> list:
                     cursor.connection.rollback()
                     raise
         except psycopg2.OperationalError:
+            conn()
+        except psycopg2.InterfaceError:
             conn()
 
 def getuserinfo_byemail(email: str) -> list:
@@ -116,6 +125,8 @@ def getuserinfo_byemail(email: str) -> list:
                     cursor.connection.rollback()
                     raise
         except psycopg2.OperationalError:
+            conn()
+        except psycopg2.InterfaceError:
             conn()
 
 
@@ -151,6 +162,8 @@ def adduserinfo(name: str, pw: str, email: str) -> bool:
                     return False, None
         except psycopg2.OperationalError:
             conn()
+        except psycopg2.InterfaceError:
+            conn()
     
 
 def verify(userid:str) -> bool:
@@ -160,6 +173,8 @@ def verify(userid:str) -> bool:
                 cursor.execute("UPDATE users SET verifed = True WHERE id = %s",(userid, ))
                 cursor.connection.commit()
             except psycopg2.OperationalError:
+                conn()
+            except psycopg2.InterfaceError:
                 conn()
             except Exception as e:
                 raise e
@@ -173,6 +188,8 @@ def checkVerified(userid: str) -> bool:
                 return verified
             except psycopg2.OperationalError:
                 conn()
+            except psycopg2.InterfaceError:
+                conn()            
             except:
                 return False
 
@@ -194,7 +211,8 @@ def addPhone(user_id: str, phone: str) -> bool:
                     return False
         except psycopg2.OperationalError:
             conn()
-    
+        except psycopg2.InterfaceError:
+            conn()
 
 def addNote(user_id: str, note: str) -> bool:
     while True:
@@ -214,6 +232,8 @@ def addNote(user_id: str, note: str) -> bool:
                     return False
         except psycopg2.OperationalError:
             conn()
+        except psycopg2.InterfaceError:
+            conn()
 
 def changeVerifiedValue(user_id: str, value: bool) -> bool:
     while True:
@@ -228,7 +248,8 @@ def changeVerifiedValue(user_id: str, value: bool) -> bool:
                     return False
         except psycopg2.OperationalError:
             conn()
-
+        except psycopg2.InterfaceError:
+            conn()
 """
 -------------------------------------------------------------------------------------------------------------------
 """
@@ -280,6 +301,8 @@ def createPost(text: str, images: list, userid: str) -> bool:
                 return True
             except psycopg2.OperationalError:
                 conn()
+            except psycopg2.InterfaceError:
+                conn()
             except Exception as e:
                 cursor.connection.rollback()
                 return False
@@ -301,6 +324,8 @@ def getRandomPosts(limit=20):
                 return data
         except psycopg2.OperationalError:
             conn()
+        except psycopg2.InterfaceError:
+            conn()
 
 def getPost(postid:str) -> list:
     while True:
@@ -316,6 +341,8 @@ def getPost(postid:str) -> list:
                 else:
                     return False,f"Post Not Found {postid}"
         except psycopg2.OperationalError:
+            conn()
+        except psycopg2.InterfaceError:
             conn()
         except Exception as e:
             return False, str(e)
@@ -333,7 +360,9 @@ def createInterest(userid):
                     cursor.connection.commit()
                     return True
         except psycopg2.OperationalError:
-                conn()
+            conn()
+        except psycopg2.InterfaceError:
+            conn()
         except Exception as e:
             print(f"[Create Interest] Error: {e}")
             return False
@@ -354,6 +383,8 @@ def addInterest(userid: str, interest: str) -> bool:
                 return True
         except psycopg2.OperationalError:
             conn()
+        except psycopg2.InterfaceError:
+            conn()
         except Exception as e:
             print(f"[Add Interest] Error adding interests: {e}")
             return False
@@ -370,4 +401,6 @@ def getInterests(userid: str) -> list:
                 tags = data[1]
                 return tags
         except psycopg2.OperationalError:
+            conn()
+        except psycopg2.InterfaceError:
             conn()

@@ -1,11 +1,7 @@
-from flask import Flask, render_template, send_from_directory, request, jsonify, session, url_for, send_file, redirect
+from flask import Flask, render_template, request, jsonify, session, url_for, send_file, redirect
 from werkzeug.utils import secure_filename
 
-from PIL import Image
-
 import os
-import time
-import string
 import datetime
 from io import BytesIO
 
@@ -148,9 +144,6 @@ def logout():
     session.clear()
     return redirect(url_for("index"))
 
-
-
-
 @app.route("/p/<postid>",methods=["POST","GET"])
 def post(postid):
     if request.method == "GET":
@@ -172,7 +165,8 @@ def post(postid):
                 text = ""
             return render_template("post.html",images=images,text=text)
         else:
-            return render_template("post.html",msg = "Failed")
+            return render_template("post.html",msg="Failed")
+
 
 
 @app.route("/p/<postid>/i/<i>")
@@ -187,9 +181,11 @@ def postImage(postid,i):
             return send_file(BytesIO(imageData),mimetype="image/png")
         else:
             print(f"Error rendering image {data}")
-            return send_file("static/images/notfound.png",mimetype="image/*")
+            return send_file("static/images/notfound.png",mimetype="image/png")
     except IndexError:
-        return send_file("static/images/notfound.png",mimetype="image/*")
+        return send_file("static/images/notfound.png",mimetype="image/png")
+
+
 
 
 
@@ -222,7 +218,20 @@ def user(userid):
         except Exception as e:
             return jsonify({"status": "Failed","Error": str(e)})
 
-    
+
+@app.route("/u/<userid>/icon/")
+def usericon(userid):
+    data = db.getuserinfo(userid)
+    date = data[-2]
+    icon = data[-3]
+    if len(icon) > 0:
+        imageData = enc.decryptFile(icon,date)
+    else:
+        return send_file("static/images/emptyicon.png", mimetype="image/png")
+    return send_file(BytesIO(imageData),mimetype="image/png")
+
+
+
 @app.route("/verify/<userid>")
 def verify(userid):
     userid = enc.decryptVerify(userid)
@@ -230,6 +239,26 @@ def verify(userid):
         msg = "cannot find the user. Please check your Email for the link"
 
     return render_template("verify.html",msg=msg)
+
+
+
+
+"""
+Statics
+"""
+
+@app.route("/static/icon.webp")
+def staticicon():
+    return send_file("static/images/icons/icon.webp",mimetype="image/webp")
+
+@app.route("/static/fullicon.webp")
+def staticfullicon():
+    return send_file("static/images/icons/fullicon.webp",mimetype="image/webp")
+
+
+
+
+
 
 
 if __name__ == '__main__':

@@ -5,65 +5,146 @@
     <head>
         <style>
             body {
-                background-color: #0B0F1A;
+                background-color: #131726;
                 color: #0B0F1A;
+                overflow-x: hidden;
+                overflow-y: scroll;
             }
             #createPost {
                 display: none;
+                transition: all 1s ease-in;
             }
             .post {
-                width: calc((100% / 4) * 1.618);
-                height: fit-content;
-                background-color: #3B82F6;
+                background:linear-gradient(to bottom right,#1A1F2E,#3B82F6);
+                width:calc((100%/4)* 1.618);
+                margin-bottom: 50px;
+                border-radius: 25px;
             }
-            .postImage {
-                display: grid;
-                gap: 4px;
-                margin-bottom: 1rem;
+            .postImages {
+                width: calc(100%-30px);
+                margin:5px;
+                border-radius: 10px;
             }
-
-            .postImage.one-image {
-                grid-template-columns: 1fr;
-            }
-
-            .postImage.two-images {
-                grid-template-columns: 1fr 1fr;
-            }
-
-            .postImage.three-images {
-                grid-template-columns: 1fr 1fr;
-                grid-template-rows: auto auto;
-            }
-
-            .postImage.four-images {
-                grid-template-columns: 1fr 1fr;
-            }
-
-            .postImage img {
+            .postImages img {
                 width: 100%;
-                height: auto;
-                object-fit: cover;
-                border-radius: 6px;
+                object-fit: fill;
+                border-radius: 20px;
             }
 
+            .navbar {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: calc(100% / 20);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background-color: #1C2233;
+                margin: 0 auto;
+                padding: 0;
+                border-bottom: 0.5px solid #7b84a1;
+                color: #E4E7EC;
 
-        </style>
+                z-index: 99;
+            }
+
+            .navbar-right:last-child {
+                margin-right: 20px;
+            }
+
+            .createNew {
+                display: flex;
+                opacity: 0;
+                visibility: hidden;
+                flex-direction: column;
+                position: absolute;
+
+                margin-top: 20px;
+                margin-right: 0;
+                margin-left: calc(100% / 1.107);
+                width: calc(100% / 17);
+                height: calc(100% / 4);
+
+                align-content: center;
+                flex-wrap: nowrap;
+                justify-content: flex-start;
+                align-items: center;
+                z-index: 100;
+                transition: all 200ms cubic-bezier(0.63, 0.21, 0.29, 0.85)
+            }
+            .crElems:first-child {
+                border-bottom-left-radius: 10px;
+                border-bottom-right-radius: 10px;
+                border-top: 1px solid #1C2233;
+            }
+
+            .crElems {
+                background-color: blue;
+                width: 100%;
+                height: 90%;
+                border: 1px solid #1C2233;
+                border-radius: 10px;
+
+                display: flex;
+                flex-direction: column;
+                align-content: center;
+                flex-wrap: nowrap;
+                justify-content: flex-start;
+                align-items: center;
+            }
+            
+            .crElem {
+                width: 100%;
+                height: calc(100% / 3);
+            }
+
+</style>
     </head>
     <body>
-        <h2>{{ msg }}</h2>
-        <button onclick="postPopup()">Create New Post</button>
-        <div id="createPost">
-            <form action="" method="POST" enctype="multipart/form-data">
-                <div>
-                    <input name="text" type="text">
-                </div>
-                <div>
-                    <input name="file" type="file" multiple>
-                </div>
-                <input type="text" name="createpost" style="display: none;">
-                <button type="submit" id="createPostSubmit">Create Post</button>
-            </form>
+        <div class="navbar">
+            <div class="navbar-left" style="display: flex; align-items: center; padding-left: 20px;">
+                <img src="/static/icon.webp" alt="App Icon" style="height: 40px; margin-right: 8px; margin-left: 20px; cursor: pointer; ">
+            </div>
+
+            <div class="navbar-right" style="display: flex; align-items: center; gap: 20px; padding-right: 20px;">
+                <button style="background: none; border: none; color: inherit; font-size: 35px; cursor: pointer;" class="add">+</button>
+
+                <button style="background: none; border: none; color: inherit; cursor: pointer;">
+                <svg xmlns="http://www.w3.org/2000/svg" height="35px" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4a1.5 1.5 0 00-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                </svg>
+                </button>
+
+                <img src="" alt="User" style="height: 35px; width: 35px; border-radius: 50%;" id="userimg">
+            </div>
         </div>
+        <div class="createNew">
+            <div style="background: #ffffff00; height: 10%; width: 100%;">
+
+            </div>
+            <div class="crElems">
+                <div onclick="postPopup()"><span style="font-size: 20px;">New Post</span></div>
+            </div>
+        </div>
+
+        <h2>{{ msg }}</h2>
+        
+        <center>
+            <div id="createPost">
+                <form action="" method="POST" enctype="multipart/form-data">
+                    <div>
+                        <input name="text" type="text">
+                    </div>
+                    <div>
+                        <input name="file" type="file" multiple>
+                    </div>
+                    <input type="text" name="createpost" style="display: none;">
+                    <button type="submit" id="createPostSubmit">Create Post</button>
+                </form>
+            </div>
+        </center>
+
         <center>
             <div id="PostSection">
 
@@ -114,21 +195,23 @@
                 AddPosts();
             })
 
-            document.querySelectorAll('.postImage').forEach(post => {
-                const count = post.querySelectorAll('img').length;
-
-                // Clear any existing classes
-                post.classList.remove('one-image', 'two-images', 'three-images', 'four-images');
-
-                if (count === 1) {
-                    post.classList.add('one-image');
-                } else if (count === 2) {
-                    post.classList.add('two-images');
-                } else if (count === 3) {
-                    post.classList.add('three-images');
-                } else if (count >= 4) {
-                    post.classList.add('four-images');
+            document.querySelector('.add').addEventListener('mouseenter', () => {
+                document.querySelector('.createNew').style.visibility = 'visible';
+                document.querySelector('.createNew').style.opacity = '1';
+            });
+            document.querySelector('.add').addEventListener('mouseleave', () => {
+                document.querySelector('.createNew').style.visibility = 'hidden';
+                document.querySelector('.createNew').style.opacity = '0';
+            });
+            document.querySelector('.createNew').addEventListener('mouseenter', () => {
+                if (document.querySelector('.createNew').style.visibility === 'hidden') {
+                    document.querySelector('.createNew').style.visibility = 'visible';
+                    document.querySelector('.createNew').style.opacity = '1';
                 }
+            });
+            document.querySelector('.createNew').addEventListener('mouseleave', () => {
+                document.querySelector('.createNew').style.visibility = 'hidden';
+                document.querySelector('.createNew').style.opacity = '0';
             });
         </script>
     </body>
