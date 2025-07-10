@@ -18,18 +18,46 @@ def connect():
 
 
 def addLog(log: str) -> bool:
+    """
+    Add Logs to Debugging DataBase
+    
+    Inputs: 
+    log:    str             # The main Logs to put in database 
+
+    Outputs:
+    status: bool            # The Status if Adding Logs Worked (True) Or Not (False)
+    """
+
+    # Create new connection with the Database
     conn = connect()
+
+    # Loop to Make sure Connection
     while True:
         try:
-            time = timenow()
+            # Fetch Detailed Time
+            time = timenow(ifDetailed=True)
+
+            # Create new Cursor
             with conn.cursor() as cursor:
+
+                # Insert Logs value to Logs Table
                 cursor.execute("INSERT INTO logs (log,date) VALUES (%s,%s)",(log,time,))
+                
+                # Commit Changes to the Database
                 cursor.connection.commit()
+
+        # Handling Programming Errors
         except psycopg2.ProgrammingError as e:
             addLog(f"[addLog] psycopg2.ProgrammingError: {e}")
             cursor.connection.rollback()
             return False
+        
+        # Handling Database Connection Errors
         except psycopg2.OperationalError:
             conn = connect()
         except psycopg2.InterfaceError:
             conn = connect()
+
+        # Handling Unknown Exceptions
+        except Exception as e:
+            addLog(f"[addLog] Unknown Exception: {e}")
