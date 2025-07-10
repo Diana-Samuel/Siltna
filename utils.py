@@ -2,6 +2,8 @@ from PIL import Image
 
 import string
 
+import datetime
+
 _Extentions = ["png","jpg","jpeg","webp","gif","mp4"]
 
 
@@ -44,3 +46,42 @@ def allowed_file(filename):
 def toWebp(filePath,savePath):
     Image.open(filePath).save(savePath, "webp", quality=80, lossless=False)
     return savePath
+
+
+
+
+
+
+
+
+def timenow(ifDetailed = False) -> str:
+    """
+    Returns The Time in UTC
+    Return Value:       Year-Month-Day
+    """
+
+    # Set the datetime zone to set it as static
+    time = datetime.datetime.now(datetime.UTC)
+    
+    # Get The values of year-month-day
+    t = time.strftime("%Y-%m-%d")
+
+    # Check if User Requested Details
+    if ifDetailed:
+        dt = detailedTime(time)
+        return f"{t}:{dt}"
+    else:
+        return t
+
+
+
+def detailedTime(time: datetime.datetime) -> str:
+    """
+    Returns The detailed time in UTC
+
+    Return Value:       Hour-Minute-Seconds-MilliSeconds
+    """
+
+    # Get the Value of hour-minute-second-millisecond
+    dt = time.strftime("%H-%M-%S-%f")
+    return dt
