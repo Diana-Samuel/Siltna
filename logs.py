@@ -44,12 +44,18 @@ def addLog(log: str) -> bool:
                 cursor.execute("INSERT INTO logs (log,date) VALUES (%s,%s)",(log,time,))
                 
                 # Commit Changes to the Database
-                cursor.connection.commit()
+                conn.commit()
 
+                # Close connection with the Database
+                conn.close()
+
+                return True
+            
         # Handling Programming Errors
         except psycopg2.ProgrammingError as e:
             addLog(f"[addLog] psycopg2.ProgrammingError: {e}")
-            cursor.connection.rollback()
+            conn.rollback()
+            conn.close()
             return False
         
         # Handling Database Connection Errors
@@ -61,3 +67,6 @@ def addLog(log: str) -> bool:
         # Handling Unknown Exceptions
         except Exception as e:
             addLog(f"[addLog] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
