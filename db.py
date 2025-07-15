@@ -112,8 +112,9 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
         text        = data[2]   # Text (if there)
         images      = data[3]   # Image (if there)
         note        = data[4]   # Note
-        status      = data[-3]  # Status of Post
-        date        = data[-2]  # Data Created
+        status      = data[-4]  # Status of Post
+        date        = data[-3]  # Data Created
+        detailedDate= date[-2]  # More Detailes Of the Date
         tags        = data[-1]  # Tags for ALG
 
         postDict =  {
@@ -124,6 +125,7 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
                         "note": note,
                         "status": status,
                         "date": date,
+                        "detailedDate": detailedDate,
                         "tags": tags
                     }
         
@@ -639,6 +641,7 @@ def createPost(text: str, images: list, userId: str) -> tuple[bool, str | None]:
 
             # Check if Post is Empty
             if len(images) <= 0 and len(text.strip()) <= 0:
+                conn.close()
                 return False, "The Post is Empty, You must Add something to the Post"
             
             # Define the type of Post
@@ -647,6 +650,7 @@ def createPost(text: str, images: list, userId: str) -> tuple[bool, str | None]:
 
             # Check Post Creator ID
             if not checkID(userId,"u"):
+                conn.close()
                 return False, "User Must Be Logged In"
 
             # Get the right now Date
@@ -680,6 +684,7 @@ def createPost(text: str, images: list, userId: str) -> tuple[bool, str | None]:
                         cursor.execute("INSERT INTO posts (id, poster_id, images, date,tags) VALUES (%s,%s,%s,%s,%s)",
                                        (postId, userId, encImages_json, date,["image"], ))
                     else:
+                        conn.close()
                         return False
                     
                     # Commit Changes
@@ -725,6 +730,299 @@ def createPost(text: str, images: list, userId: str) -> tuple[bool, str | None]:
         # Handle Unknown Exceptions 
         except Exception as e:
             logs.addLog(f"[db.createPost] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+        
+
+def getPost(postId: str) -> tuple[bool,dict]:
+    """
+    Get the post details by using Post ID
+
+    Inputs:
+    postId: str                 # Post ID Needed to fetch the Post
+
+    Outputs:
+    status: bool
+    value:  dict | str          # Post Details as a Dict (empty if no post found and will have error value if error occured)
+    """
+
+    # Create new connection with the Database
+    conn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Check if Post exists
+                if checkID(postId,"p"):
+                    # Execute command to fetch the Post using Post ID
+                    cursor.execute("SELECT * FROM posts WHERE id = %s",(postId, ))
+                    
+                    # Fetch data from Database
+                    data = cursor.fetchone()
+
+                    # Turn it to Dict
+                    dataDict = toDict(data,"p")
+
+                    # Close connection with database
+                    conn.close()
+
+                    return True, dataDict
+
+                else:
+                    conn.close()
+                    return False, f"Post not found: {postId}"
+            
+        # Handle Programming Exceptions
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getPost] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getPost] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+        
+
+def getRandomPosts(limit: int =20) -> list:
+    """
+    Get Random Posts From the Database
+
+    Inputs:
+    limit:  int                 # Maximum number of posts to retrieve from Database
+
+    Outputs:
+    Posts:  list                # List of Posts Retrieved by Database
+    """
+
+    # Create new connection with the Database
+    conn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Execute a command to get Random Posts
+                cursor.execute("SELECT * FROM posts ORDER BY RANDOM() LIMIT %s",
+                               (limit, ))
+                
+                # Retrieve Data
+                fetchedData = cursor.fetchall()
+
+                # Turn fetched data to more organized list
+                data = []
+                for post in fetchedData:
+                    data.append(toDict(post,"p"))
+
+                # Close Connection with Database
+                conn.close()
+
+                return data
+            
+        # Handle Programming Exceptions
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getRandomPosts] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getRandomPosts] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+        
+
+def createInterest(userId: str) -> bool:
+    """
+    Create Interest For the user
+
+    Inputs:
+    userId: str                     # User ID needed for Interest Creation
+
+    Outputs:
+    status: bool                    # Status of interest Creation
+    """
+
+    # Create new connection with Database
+    conn = connect()
+
+    # Loop to Prevent Connection Errors
+    while True:
+        try:
+            # Check if userId Exists
+            if not checkID(userId,"u"):
+                conn.clsoe()
+                return False, "User ID Does Not Exists"
+
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Add Empty Interests
+                cursor.execute("INSERT INTO interests (userId, tags) VALUES (%s,%s)",
+                               (userId,[]))
+                
+                # Commit changes
+                conn.commit()
+
+                conn.close()
+
+                return True
+            
+        # Handle Programming Exceptions
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.createInterest] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.createInterest] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+        
+
+def getInterests(userId: str) -> list:
+    """
+    Get the Interests of the User
+
+    Inputs:
+    userId:     str                     # User ID Needed for Interests Retrieval
+    
+    Outputs:
+    Interests:  list                    # List of Interests (empty if failed or None)
+    """
+
+    # Create new Connection with Database
+    conn = connect()
+
+    # Loop to Prevent Connection Errors
+    while True:
+        try:
+            # Check if user ID Exists
+            if not checkID(userId,"u"):
+                conn.close()
+                return []
+            
+            # Create new cursor
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM interests WHERE userId = %s",
+                               (userId, ))
+                
+                data = cursor.fetchone()
+                tags = data[1]
+
+                conn.close()
+                return tags
+
+
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getInterest] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getInterest] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+        
+
+
+def getInterests(interest: str,userId: str) -> bool:
+    """
+    Get the Interests of the User
+
+    Inputs:
+    userId:     str                     # User ID Needed for Interests Retrieval
+    
+    Outputs:
+    Interests:  list                    # List of Interests (empty if failed or None)
+    """
+
+    # Create new Connection with Database
+    conn = connect()
+
+    # Loop to Prevent Connection Errors
+    while True:
+        try:
+            # Check if user ID Exists
+            if not checkID(userId,"u"):
+                conn.close()
+                return []
+            
+            # Create new cursor to get Current Interests
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM interests WHERE userId = %s",
+                               (userId, ))
+                
+                data = cursor.fetchone()
+                tags = data[1]
+
+            tags.append(interest)
+
+            # Create new cursor
+            with conn.cursor() as cursor:
+                cursor.execute("INSERT INTO interests (tags) VALUES (%s) WHERE userId = %s",
+                               (tags, userId, ))
+                
+                # Commit changes
+                conn.commit()
+
+                conn.close()
+                return True
+
+
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getInterest] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getInterest] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
             return False
