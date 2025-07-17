@@ -1007,7 +1007,7 @@ def getInterests(interest: str,userId: str) -> bool:
                 conn.close()
                 return True
 
-
+        # Handle Programming Errors
         except psycopg2.ProgrammingError as e:
             logs.addLog(f"[db.getInterest] psycopg2.ProgrammingError: {e}")
             conn.rollback()
@@ -1023,6 +1023,72 @@ def getInterests(interest: str,userId: str) -> bool:
         # Handle Unknown Exceptions 
         except Exception as e:
             logs.addLog(f"[db.getInterest] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+        
+
+
+
+
+def addToKeys(userId: str, publicKey: str, privateKey: str) -> tuple[bool,None | str]:
+    """
+    Adds a Public Encryption Key to the Database For E2EE
+
+    Inputs:
+    userId:     str                 # User ID Needed for adding Key
+    publicKey:  str                 # Public Encyption Key
+    privateKey: str                 # Private Key
+
+    Outputs:
+    status:     bool                # Status of The Process
+    value:      str | None          # Error Text (None if no errors Occured)
+    """
+
+    # Create New connection with the Database
+    conn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Get Rightnow date
+            date = utils.timenow()
+
+            # Encrypt Keys  basic Encryption
+            publicKey  = enc.encrypt(publicKey,date,"u")
+            privateKey = enc.encrypt(privateKey,date,"u")
+
+
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Execute Insert Command
+                cursor.execute("INSERT INTO keys (userId, publicKey, privateKey, date) VALUES (%s,%s,%s,%s)",
+                               (userId, publicKey, privateKey, date, ))
+                
+                # Commit changes
+                conn.commit()
+
+                # Close connection Between Server and Database
+                conn.close()
+
+                return True, None
+
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.addToKeys] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.addToKeys] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
             return False

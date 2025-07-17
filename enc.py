@@ -10,6 +10,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 from cryptography.fernet import InvalidToken
 
+
+
 import base64
 
 from typing_extensions import Literal
@@ -255,3 +257,92 @@ def checkpw(pw: str, stored_hash: str) -> bool:
         return ph.verify(stored_hash, bcrypt_hash.decode())
     except argon2.exceptions.VerifyMismatchError:
         return False
+    
+
+
+
+"""
+E2EE (End to End Encryption)
+"""
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.backends import default_backend
+
+def createE2EEKeys(password: str) -> tuple[bool, tuple[str, str] | str | None]:
+    """
+    Create Private and Public PEM Keys for E2EE
+
+    Inputs:
+    password:   str                 # Password needed for encrypting private key
+
+    Outputs:
+    publicKey:  str                 # Public key of the user
+    privateKey: str                 # private key of the user
+    """
+
+    # To Catch any Unexpected Exceptions
+    try:
+        if not password:
+            return False, "Please Input the password"
+
+        # Create New Private Key
+        privateKey = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+            backend=default_backend()
+        )
+
+        # Create new Public Key
+        publicKey = privateKey.public_key()
+
+        # Create Encryption Algorithm
+        encryptionAlg = serialization.BestAvailableEncryption(password.encode())
+
+        # Serialize Private Key
+        privateKeyPEM = privateKey.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=encryptionAlg
+        ).decode()
+
+        # Serialize Public Key
+        publicKeyPEM = publicKey.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode()
+
+        return True, (publicKeyPEM, privateKeyPEM)
+    
+    # Handle Unknown Exceptions
+    except Exception as e:
+        import logs
+        logs.addLog(f"[enc.createE2EEKeys] Unexpected Exception: {e}")
+        return False, str(e)
+    
+
+def decryptPrivateKey(privateKey: str, password: str) -> str | None:
+    """
+    Decrypts the Private key with Password
+
+    Inputs:
+    privateKey: str                 # private key to decrypt it
+    password:   str                 # password for decryption
+    
+    Outputs:
+    privateKey: str                 # decrypted private key
+    """
+
+    # To prevent Unknown Exceptions
+    try:
+        decryptedPrivateKey = serialization.load_pem_private_key(
+            data=privateKey,
+            password=password,
+            backend=default_backend()
+        )
+
+        return decryptedPrivateKey
+    
+    except Exception as e:
+        import logs
+        logs.addLog(f"[enc.decryptPrivateKey] Unexpected Exception: {e}")
+        return None
