@@ -264,7 +264,7 @@ def checkpw(pw: str, stored_hash: str) -> bool:
 """
 E2EE (End to End Encryption)
 """
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
 
@@ -346,3 +346,49 @@ def decryptPrivateKey(privateKey: str, password: str) -> str | None:
         import logs
         logs.addLog(f"[enc.decryptPrivateKey] Unexpected Exception: {e}")
         return None
+    
+
+def encryptMessage(message: str, publicKey: str) -> str:
+    """
+    Encrypt Message using Public Key
+
+    Inputs:
+    message:            str                 # Message needed to encrypt
+    publicKey:          str                 # Public key for encryption
+
+    Outputs:
+    encryptedMessage:   str                 # Message after Encryption
+    """
+
+    encryptedMessage = publicKey.encrypt(
+        message.encode(),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return encryptedMessage
+
+def decryptMessage(message: str, privateKey: str) -> str:
+    """
+    Decrypt Message using Private Key
+
+    Inputs:
+    message:            str                 # Message needed to decrypt
+    privateKey:         str                 # Private key for Decryption
+
+    Outputs:
+    decryptedMessage:   str                 # Message after Decryption
+    """
+
+    decryptedMessage = privateKey.decrypt(
+        message,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+    return decryptedMessage.decode()

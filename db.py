@@ -11,7 +11,8 @@ from typing_extensions import Literal
 idTypes = Literal["u","p"]
 tables = {
             "u": "users",
-            "p": "posts"
+            "p": "posts",
+            "c": "chat"
          }
 
 import pyconf
@@ -29,6 +30,17 @@ def connect():
 
     return conn
 
+
+def chatsConnect():
+    conn = psycopg2.connect(
+        database    =   config["chatdb"],
+        host        =   config["host"],
+        user        =   config["user"],
+        password    =   config["password"],
+        port        =   config["port"]
+    )
+
+    return conn
 
 
 def randomid(length: int) -> str:
@@ -1089,6 +1101,62 @@ def addToKeys(userId: str, publicKey: str, privateKey: str) -> tuple[bool,None |
         # Handle Unknown Exceptions 
         except Exception as e:
             logs.addLog(f"[db.addToKeys] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+        
+def addToChat(chatId: str, message: str, userId: str) -> tuple[bool, None | str]:
+    """
+    add message to chat
+
+    Inputs:
+    chatId:     str                     # Chat ID for inserting message
+    message:    str                     # message to insert
+    userId:     str                     # user ID of the owner of the message
+
+    Outputs:
+    status:     bool                    # Status of message insertion
+    value:      str | None              # Value of Error
+    """
+
+    # TODO: Add Encryption
+
+    # Create new connection with Chat Database
+    conn = chatsConnect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Get timenow Date
+            date = utils.timenow()
+
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Execute insert message
+                cursor.execute("INSERT INTO %s (message, userId, date) VALUES (%s, %s, %s)",
+                               (message, userId, date, ))
+                conn.commit()
+
+                conn.close()
+
+                return True
+
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.addToChat] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = chatsConnect()
+        except psycopg2.InterfaceError:
+            conn = chatsConnect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.addToChat] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
             return False
