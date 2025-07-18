@@ -368,7 +368,9 @@ def encryptMessage(message: str, publicKey: str) -> str:
             label=None
         )
     )
-    return encryptedMessage
+
+    return base64.urlsafe_b64encode(encryptedMessage).decode('utf-8')
+
 
 def decryptMessage(message: str, privateKey: str) -> str:
     """
@@ -381,6 +383,8 @@ def decryptMessage(message: str, privateKey: str) -> str:
     Outputs:
     decryptedMessage:   str                 # Message after Decryption
     """
+
+    message = base64.urlsafe_b64decode(message).decode('utf-8')
 
     decryptedMessage = privateKey.decrypt(
         message,

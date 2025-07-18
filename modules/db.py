@@ -1074,7 +1074,7 @@ def addToKeys(userId: str, publicKey: str, privateKey: str) -> tuple[bool,None |
             # Create new cursor
             with conn.cursor() as cursor:
                 # Execute Insert Command
-                cursor.execute("INSERT INTO keys (userId, publicKey, privateKey, date) VALUES (%s,%s,%s,%s)",
+                cursor.execute('INSERT INTO keys ("userId", "publicKey", "privateKey", "date") VALUES (%s,%s,%s,%s)',
                                (userId, publicKey, privateKey, date, ))
                 
                 # Commit changes
@@ -1104,6 +1104,109 @@ def addToKeys(userId: str, publicKey: str, privateKey: str) -> tuple[bool,None |
             conn.rollback()
             conn.close()
             return False
+        
+def getPublicKey(userId: str) -> str:
+    """
+    Gets a Public Key from Database
+
+    Inputs:
+    userId:     str                     # User ID of user needed to get Public Key
+
+    Outputs:
+    publicKey:  str                     # Public Key of user
+    """
+
+    # Create new connection with Database
+    conn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Select Public Key
+                cursor.execute("SELECT publicKey, date FROM keys WHERE userId = %s",
+                               (userId, ))
+                
+                data = cursor.fetchone()
+                publicKey = data[0]
+                date = data[1]
+
+
+                publicKey = enc.decrypt(publicKey,date,"u")
+
+                return publicKey
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getPublicKey] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getPublicKey] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+
+def getPrivateKey(userId: str) -> str:
+    """
+    Gets a Private Key from Database
+
+    Inputs:
+    userId:     str                     # User ID of user needed to get Private Key
+
+    Outputs:
+    Private:  str                       # Private Key of user
+    """
+
+    # Create new connection with Database
+    conn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Select Public Key
+                cursor.execute("SELECT privateKey, date FROM keys WHERE userId = %s",
+                               (userId, ))
+                
+                data = cursor.fetchone()
+                privateKey = data[0]
+                date = data[1]
+
+                privateKey = enc.decrypt(privateKey,date,"u")
+
+                return privateKey
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getPrivateKey] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getPrivateKey] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
         
 def addToChat(chatId: str, message: str, userId: str) -> tuple[bool, None | str]:
     """
