@@ -381,7 +381,7 @@ def addUserInfo(name: str, password: str, email: str) -> tuple[bool, str | None]
                 # TODO ADD INTEREST TO USER USING FUNCTION CALLED createInterest(userId)
 
                 conn.close()
-                return True, None
+                return True, userId
 
         # Handle Programming Errors
         except psycopg2.ProgrammingError as e:
