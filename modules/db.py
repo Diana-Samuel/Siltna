@@ -808,7 +808,7 @@ def getPost(postId: str) -> tuple[bool,dict]:
             return False
         
 
-def getRandomPosts(limit: int =20) -> list:
+def getRandomPosts(limit: int = 20) -> list:
     """
     Get Random Posts From the Database
 
