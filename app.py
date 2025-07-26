@@ -45,7 +45,8 @@ def make_session_permanent():
 # Index
 @app.route("/")
 def index():
-    return render_template("index.html")
+    userId = session["id"]
+    return render_template("index.html", userId = userId)
 
 # Login and signup
 @app.route("/auth", methods=["POST","GET"])
@@ -75,10 +76,10 @@ def auth():
             msg = "Registeration Completed Successfully, Please Verify and Login with your account."
             
             # Send Verification Link
-            verf.sendLink(email,f"https://siltna.dpdns.org/verify/{enc.encryptVerify(db.getUserInfo(value)["name"])}")
+            verf.sendLink(email,f"https://siltna.dpdns.org/verify/{enc.encryptVerify(value)}")
             return render_template("auth.html",msg=msg)
         else:
-            return render_template("auth.thml",msg=value)
+            return render_template("auth.html",msg=value)
         
     # check if user is logging in
     if request.method == "POST" and "login" in request.form:
@@ -91,7 +92,7 @@ def auth():
             return render_template("auth.html",msg="There is no accounts associated with this Email")
         
         # Check if password matches and if verified
-        if enc.checkpw(password,db.getUserInfo(None,email,useEmail=True)):
+        if enc.checkpw(password,db.getUserInfo(None,email,useEmail=True)["password"]):
             # Check if user is verified
             if not db.checkVerified(db.getUserInfo(email=email,useEmail=True)["id"]):
                 return render_template("auth.html",msg="Account is Not Verified, Please check Email or contact Support.")
@@ -157,7 +158,7 @@ def user(userId):
 @app.route("/u/<userId>/icon")
 def userIcon(userId):
     # Check if user exists 
-    if not db.checkId(userId):
+    if not db.checkID(userId):
         # Return 404 Error
         return abort(404)
     
@@ -168,12 +169,16 @@ def userIcon(userId):
     icon = userData["profilePic"]
 
     # Check if there is user Icon
-    if len(icon) > 0:
-        # Decrypt user icon
-        image = enc.decryptFile(icon,date)
+    if icon:
+        if len(icon) > 0:
+            # Decrypt user icon
+            image = enc.decryptFile(icon,date)
 
-        # Return Image data decrypted
-        return send_file(BytesIO(image), mimetype="image/png")
+            # Return Image data decrypted
+            return send_file(BytesIO(image), mimetype="image/png")
+        else:
+            # If not return Empty Icon
+            return send_file("static/images/emptyicon.png", mimetype="image/png")
     else:
         # If not return Empty Icon
         return send_file("static/images/emptyicon.png", mimetype="image/png")
@@ -364,7 +369,7 @@ def postImage(postId,i):
 
 
 # Create Posts
-@app.route("/createPost", methods="POST")
+@app.route("/createPost", methods=["POST"])
 def createPost():
     # Check if request is to create Post and method is POST
     if request.method == "POST" and "createpost" in request.form:

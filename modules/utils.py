@@ -68,7 +68,7 @@ def timenow(ifDetailed=False) -> str:
 
     if ifDetailed:
         dt = detailedTime(time)
-        return f"{t}T{dt}Z"
+        return t, dt
     else:
         return t
 

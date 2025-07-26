@@ -3,9 +3,9 @@ import psycopg2
 import random
 import json
 
-import utils
-import logs
-import enc
+from modules import utils
+from modules import logs
+from modules import enc
 
 from typing_extensions import Literal
 idTypes = Literal["u","p"]
@@ -96,9 +96,9 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
         name        = data[1]   # Name of User
         email       = data[2]   # Email
         password    = data[4]   # Password
-        phone       = data[5]   # Phone Number
-        verified    = data[6]   # If user is verified
-        note        = data[7]   # Note added by admins
+        phone       = data[3]   # Phone Number
+        verified    = data[5]   # If user is verified
+        note        = data[6]   # Note added by admins
         profilepic  = data[-3]  # Profile Picture of User
         date        = data[-2]  # Date of creation
         following   = data[-1]  # Pages Followed By user
@@ -358,7 +358,7 @@ def addUserInfo(name: str, password: str, email: str) -> tuple[bool, str | None]
                 conn.close()
                 return False, "The User ID Already Exists"
             
-            if checkEmail(email,"u"):
+            if checkEmail(email):
                 conn.close()
                 return False, "The Email Address Already Exists"
             
@@ -378,7 +378,23 @@ def addUserInfo(name: str, password: str, email: str) -> tuple[bool, str | None]
                 conn.commit()
 
                 # Create Interests to User
-                # TODO ADD INTEREST TO USER USING FUNCTION CALLED createInterest(userId)
+                interestStatus, interestValue = createInterest(userId)
+
+                if not interestStatus:
+                    return False, f"Failed to create Interest: {interestValue}"
+                
+                # Create new Pair of Encyption Keys
+                e2eeStatus, (PublicKey, privateKey) = enc.createE2EEKeys(password)
+                
+                if not e2eeStatus:
+                    return False, "Failed to create Encryption Keys"
+                
+                # Send keys to DB
+                addtoKeyStatus , Value = addToKeys(userId,PublicKey,privateKey)
+
+                if not addtoKeyStatus:
+                    return False, Value
+                
 
                 conn.close()
                 return True, userId
@@ -388,7 +404,7 @@ def addUserInfo(name: str, password: str, email: str) -> tuple[bool, str | None]
             logs.addLog(f"[db.addUserInfo] psycopg.ProgrammingError {e}")
             conn.rollback()
             conn.close()
-            return False, None
+            return False, str(e)
         
         # Handle Database connection issues
         except psycopg2.OperationalError:
@@ -401,7 +417,8 @@ def addUserInfo(name: str, password: str, email: str) -> tuple[bool, str | None]
             logs.addLog(f"[db.addUserInfo] Unknown Exception {e}")
             conn.rollback()
             conn.close()
-            return False, None
+            raise e
+            return False, str(e)
         
 
 def chanfeVerificationStatus(userId: str, value: bool = True) -> tuple[bool,None|str]:
@@ -480,10 +497,13 @@ def checkVerified(userId: str) -> bool:
                 data = cursor.fetchone()
                 
                 # Turn data to dictionary
-                data = toDict(data)
+                dataDict = toDict(data)
 
                 conn.close()
-                return data["verified"]
+                print(data)
+                print(dataDict)
+                print(dataDict["verified"])
+                return dataDict["verified"]
 
 
         # Handle Programming Errors
@@ -865,7 +885,7 @@ def getRandomPosts(limit: int = 20) -> list:
             return False
         
 
-def createInterest(userId: str) -> bool:
+def createInterest(userId: str) -> tuple[bool , None | str]:
     """
     Create Interest For the user
 
@@ -882,11 +902,6 @@ def createInterest(userId: str) -> bool:
     # Loop to Prevent Connection Errors
     while True:
         try:
-            # Check if userId Exists
-            if not checkID(userId,"u"):
-                conn.clsoe()
-                return False, "User ID Does Not Exists"
-
             # Create new cursor
             with conn.cursor() as cursor:
                 # Add Empty Interests
@@ -898,14 +913,14 @@ def createInterest(userId: str) -> bool:
 
                 conn.close()
 
-                return True
+                return True, None
             
         # Handle Programming Exceptions
         except psycopg2.ProgrammingError as e:
             logs.addLog(f"[db.createInterest] psycopg2.ProgrammingError: {e}")
             conn.rollback()
             conn.close()
-            return False
+            return False, str(e)
 
         # Handle Connection Errors
         except psycopg2.OperationalError:
@@ -918,7 +933,7 @@ def createInterest(userId: str) -> bool:
             logs.addLog(f"[db.createInterest] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
-            return False
+            return False, str(e)
         
 
 def getInterests(userId: str) -> list:

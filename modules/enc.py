@@ -315,7 +315,7 @@ def createE2EEKeys(password: str) -> tuple[bool, tuple[str, str] | str | None]:
     
     # Handle Unknown Exceptions
     except Exception as e:
-        import logs
+        from modules import logs
         logs.addLog(f"[enc.createE2EEKeys] Unexpected Exception: {e}")
         return False, str(e)
     
@@ -343,7 +343,7 @@ def decryptPrivateKey(privateKey: str, password: str) -> str | None:
         return decryptedPrivateKey
     
     except Exception as e:
-        import logs
+        from modules import logs
         logs.addLog(f"[enc.decryptPrivateKey] Unexpected Exception: {e}")
         return None
     
