@@ -139,6 +139,7 @@
                 color: #E4E7EC;
                 cursor: pointer;
             }
+            
 </style>
     </head>
     <body>
@@ -208,17 +209,21 @@
                 fetch("/getPosts")
                     .then(response => response.json())
                     .then(data => {
-                        console.log(data);
                         if (data["status"] == "success") {
                             let posts = data["posts"];
                             let final = [];
+
+                            if (posts.length < 1) {
+                                document.querySelector("#PostSection").innerHTML += "<div class='finishedPosts'> You have watched all possible posts.</div>";
+                            };
+
                             posts.forEach(info => {
                                 let post = info[1];
                                 let text = post[0];
                                 let images = post[1];
                                 let postdate = post[2];
-                                let postername = info[0][1]
-                                let posterid = info[0][0]
+                                let postername = info[0][1];
+                                let posterid = info[0][0];
                                 let htmlPost = "<div class='post'><div class='posterInfo'><a href='/u/"
                                                 +posterid+
                                                 "'>"
@@ -234,8 +239,15 @@
                             });
                             document.querySelector("#PostSection").innerHTML += final.join("");
                         }
+                        else {
+                            console.log(data["error"]);
+                        };
+                    })
+                    .catch(error => {
+                        console.error("Fetch failed:", error);
                     });
             }
+
             document.addEventListener("DOMContentLoaded",() => {
                 AddPosts();
             })

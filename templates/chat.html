@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Siltna | Chat {{ chatId }}</title>
+    </head>
+    <body>
+        <div style="display: none; opacity: 0; visibility: hidden;">
+            <span id="chatid">{{ chatId }}</span>
+            <span id="userId">{{ userId }}</span>
+        </div>
+        <div id="messages">
+
+        </div>
+        <script src="/static/chat.js"></script>
+        <script>
+            const chatId = document.querySelector("#chatid").textContent;
+            
+
+        </script>
+    </body>
+</html>

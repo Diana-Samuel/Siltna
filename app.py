@@ -5,6 +5,8 @@ from flask import abort                         # Error handling with flask
 from werkzeug.utils import secure_filename      # Handle File uploads
 from flask_session import Session               # Advanced Flask Session
 import redis                                    # For Session handling
+from flask_socketio import SocketIO, emit       # Handle websocket events
+from flask_socketio import join_room,leave_room # Handle websocket Room
 
 from io import BytesIO                          # Handle showing Raw Images
 import datetime
@@ -31,11 +33,23 @@ app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'sess:'
-app.config['SESSION_REDIS'] = redis.from_url('redis://localhost:6379')
+app.config['SESSION_REDIS'] = redis.from_url("redis://localhost:6379")
 app.secret_key = conf["secret_key"]
 
 # Create new advanced session
 Session(app)
+
+# Make webSocket server
+Socket = SocketIO(app)
+
+# Redis Cache System for chat
+app.config['CHAT_KEY_PREFIX'] = 'chat:'
+app.config['CHAT_REDIS'] = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+# Redis Cache for user status
+app.config['USER_KEY_PREFIX'] = 'user:'
+app.config['USER_REDIS'] = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
 
 # Make sessions Permenant
 @app.before_request
@@ -195,101 +209,83 @@ def userIcon(userId):
 #####################################
 
 # Get Posts for Index
-@app.route("/getPosts",methods=["GET"])
+@app.route("/getPosts", methods=["GET"])
 def getPosts():
-    # Check if method is GET
-    if request.method == "GET":
-        # Check if user is Logged in
-        try:
-            if not session["loggedin"]:
-                return jsonify({"status": "failed","error": "You Must be Logged in"})
-        except KeyError:
-            return jsonify({"status": "failed","error": "You Must be Logged in"})
+    try:
+        if not session.get("loggedin"):
+            return jsonify({"status": "failed", "error": "You Must be Logged in"})
+
+        userId = session["id"]
+        posts = []
+        post_ids = set()
         
-        # Handle Getting posts
-        try:
-            # Get user ID from Session
-            userId = session["id"]
+        all_seen_post_ids = set()
 
-            posts = []
+        while len(posts) < 10:
+            randomPosts = db.getRandomPosts(100)
             
-            # Get Posts
-            while True:
-                # Get Random posts
-                randomPosts = db.getRandomPosts(100)
+            # If no posts are returned, we've exhausted the database
+            if not randomPosts:
+                break
 
-                # Arrange Posts and Take best 2 scored
-                algPosts = alg.postArrange(randomPosts,userId)
+            algPosts = alg.postArrange(randomPosts, userId)
 
-                # Get highest 2 Posts
-                algPosts = algPosts[:2]
+            # Check if all posts returned by the algorithm have already been seen
+            current_seen_count = 0
+            for post in algPosts:
+                if post["id"] in all_seen_post_ids:
+                    current_seen_count += 1
+            
+            if len(algPosts) > 0 and current_seen_count == len(algPosts):
+                break
 
-                # Add them to posts
-                for post in algPosts:
-                    for p in posts:
-                        # check if posts is full (10 posts)
-                        if len(posts) > 10:
-                            break
-                        else:
-                            # Check if post is duplicated
-                            if p["id"] != post["id"]:
-                                posts.append(post)
-                            else:
-                                continue
+            for post in algPosts:
+                if post["id"] not in post_ids:
+                    posts.append(post)
+                    post_ids.add(post["id"])
+                    
+                all_seen_post_ids.add(post["id"]) # Add to the master list of seen posts
 
-                    # check if posts is full (10 posts)
-                    if len(posts) > 10:
-                        break
-
-                # check if posts is full (10 posts)
-                if len(posts) > 10:
+                if len(posts) >= 10:
                     break
 
-            
-            decPosts = []
-            for post in posts:
-                postId = post["postId"]
-                posterId = post["posterId"]
-                date = post["date"]
-                text = post["text"]
-                images = post["images"]
-                tags = post["tags"]
+        # Check if we found any posts at all before proceeding
+        if not posts:
+            return jsonify({"status": "success", "posts": []})
 
-                # check if post has images
-                if "image" in tags:
-                    # Put Image links
-                    imagesPath = []
+        decPosts = []
+        for post in posts:
+            postId = post["postId"]
+            posterId = post["posterId"]
+            date = post["date"]
+            text = post["text"]
+            images = post["images"]
+            tags = post["tags"]
 
-                    for i in range(len(images)):
-                        imagesPath.append(f"<img src='/p/{postId}/i/{i}'>")
+            imagesPath = []
+            if "image" in tags:
+                for i in range(len(images)):
+                    imagesPath.append(f"<img src='/p/{postId}/i/{i}'>")
 
-                # Check if post has Text
-                if "text" in tags:
-                    text = enc.decrypt(text,date,"p")
-                else:
-                    text = ""
-
-                # Get Poster info
-                posterData = db.getUserInfo(posterId)
-                posterName = enc.decrypt(posterData["name"],posterData["date"])
-
-                # Add to Post List
-                decPosts.append([[posterId,posterName],[text,imagesPath,str(date)]])
-            
-            return jsonify({"status": "success", "posts": decPosts})
-                    
-        except KeyError as e:
-            if e == "id":
-                return jsonify({"status": "failed","error": "You Must be Logged in"})
+            if "text" in tags:
+                text = enc.decrypt(text, date, "p")
             else:
-                raise e
-                return jsonify({"status":"failed","error": f"Key Error: {str(e)}"})
-            
-        except Exception as e:
-            print(f"Get POSTS {e}")
-            raise e
-            return jsonify({"status":"failed","error": str(e)})
+                text = ""
 
+            posterData = db.getUserInfo(posterId)
+            if posterData:
+                posterName = enc.decrypt(posterData["name"], posterData["date"])
+                decPosts.append([[posterId, posterName], [text, imagesPath, str(date)]])
+            else:
+                continue 
+
+        return jsonify({"status": "success", "posts": decPosts})
+
+    except KeyError:
+        return jsonify({"status": "failed", "error": "You Must be Logged in"})
+    except Exception as e:
+        print(f"Get POSTS error: {e}")
+        return jsonify({"status": "failed", "error": str(e)})
 
 # Getting Post info
 @app.route("/p/<postId>",methods=["GET"])
@@ -438,6 +434,160 @@ def staticicon():
 @app.route("/static/fullicon.webp")
 def staticfullicon():
     return send_file("static/images/icons/fullicon.webp",mimetype="image/webp")
+
+
+
+
+
+
+
+#####################################
+#           CHATS HANDLE            #
+#####################################
+@app.route("/c/<chatId>")
+def chat(chatId):
+    userId = session["id"]
+    return render_template("chat.html",chatId=chatId,userId=userId)
+
+
+# Check online status of user
+@app.route("/c/u/<userId>/chechStatus")
+def checkOnlineStatus(userId):
+    # Get redis server
+    redisServer = app.config["USER_REDIS"]
+
+    # To prevent Unknown Errors
+    try:
+        # Get value from redis server
+        value = redisServer.hgetall(f"{app.config["USER_KEY_PREFIX"]}{userId}")
+        
+        # Check if value empty
+        if value:
+            # Get status of user
+            status = bool(value["status"])
+            return status
+        else:
+            return False
+
+    # Handle unknown Errors
+    except Exception as e:
+        print(f"[checkOnlineStatus] Unknown Status: {e}")
+        return False
+
+
+@app.route("/c/<chatId>/msgs")
+def getMessages(chatId):
+    # Get chat id from session
+    userId = session["id"]
+
+    # Check if chat Exitst
+    chatInfo = db.getChatInfo(chatId)
+
+    if chatInfo:
+        # Get Redis Chat server
+        redisServer = app.config["CHAT_REDIS"]
+
+        chatCache = redisServer.hgetall(f"{app.config["CHAT_KEY_PREFIX"]}{chatId}")
+
+        if chatCache:
+            for i in chatCache["messages"]:
+                chatInfo.append(i)
+            return chatInfo
+        else:
+            return jsonify(chatInfo)
+    else:
+        return None
+    
+
+
+
+
+@Socket.on("joinChat")
+def joinChat(data):
+    # Get redis server
+    chatRedis = app.config["CHAT_REDIS"]
+    userRedis = app.config["USER_REDIS"]
+
+    # Get userid from session
+    userId = session["id"]
+    chatId = data["chatid"]
+
+    # set status of user in Cache
+    userRedis.hset(f"{app.config["USER_KEY_PREFIX"]}{userId}", mapping={
+        "userId": userId,
+        "status": 1
+    })
+
+    # add Chat in Cache
+    chatRedis.hset(f"{app.config["CHAT_KEY_PREFIX"]}{chatId}", mapping={
+        "chatId": chatId,
+        "messages": []
+    })
+
+    # make user join room
+    join_room(chatId)
+
+
+
+@Socket.on("leaveChat")
+def joinChat(data):
+    # Get redis server
+    chatRedis = app.config["CHAT_REDIS"]
+    userRedis = app.config["USER_REDIS"]
+
+    # Get userid from session
+    userId = session["id"]
+    chatId = data["chatid"]
+
+    # set status of user in Cache
+    userRedis.hset(f"{app.config["USER_KEY_PREFIX"]}{userId}", mapping={
+        "userId": userId,
+        "status": 0
+    })
+
+    # delete Chat from Cache
+    chatRedis.delete(f"{app.config["CHAT_KEY_PREFIX"]}{chatId}")
+
+    # make user join room
+    leave_room(chatId)
+
+
+
+@Socket.on("send_message")
+def sendMessage(data):
+    # Get redis server
+    chatRedis = app.config["CHAT_REDIS"]
+
+    # Get needed Data
+    chatId  = data["chatid"]
+    message = data["message"]
+    userId  = session["id"]
+    dateSent = utils.timenow()
+    dt = utils.timenow(ifDetailed=True)
+
+
+    # Get other user public Key
+    db.getChatInfo(chatId)
+    
+    # Create chat details
+    messageInfo = {
+        "senderId": userId,
+        "message": message,
+        "dateSend": dateSent,
+        "detailedDate": dt
+    }
+
+    emit("recieve_message", messageInfo, room=chatId)
+        
+
+
+# Static js for chat
+@app.route("/static/chat.js")
+def chatjs():
+    return send_file("/static/js/chat.js")
+
+
+
 
 
 

@@ -8,7 +8,7 @@ from modules import logs
 from modules import enc
 
 from typing_extensions import Literal
-idTypes = Literal["u","p"]
+idTypes = Literal["u","p","c","cm"]
 tables = {
             "u": "users",
             "p": "posts",
@@ -143,6 +143,27 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
         
         return postDict
     
+    if dataType == "c":
+        # Divide Chat data to Pieces
+        chatId          = data[0]   # Chat id
+        firstUserId     = data[1]   # Creator of chat (userId)
+        secondUserId    = data[2]   # Other Side of chat (userId)
+
+        chatDict =  {
+                        "chatId": chatId,
+                        "firstUserId": firstUserId,
+                        "secondUserId": secondUserId
+                    }
+        
+        return chatDict
+    
+    if dataType == "cm":
+        # Divide Message data to Pieces
+        message = data[0]
+        senderId = data[1]
+        date = data[2]
+
+
 
 def checkID(ID: str, idType: idTypes = "u") -> bool:
     """
@@ -1277,4 +1298,140 @@ def addToChat(chatId: str, message: str, userId: str) -> tuple[bool, None | str]
             logs.addLog(f"[db.addToChat] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
+            return False
+
+
+
+def getChatInfo(chatId: str) -> dict:
+    """
+    Get Chat info from db
+
+    Inputs:
+    chatId: str             # Chat ID needed to get the Chat info
+
+    Outputs:
+    Info:   dict            # Dict that has info
+    """
+
+    # Create new connection with Chat Database
+    chatConn = chatsConnect()
+    generalConn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Create new cursor
+            with chatConn.cursor() as cursor:
+                # Execute Select Chat
+                cursor.execute("SELECT * FROM %s",(chatId, ))
+
+                # Get all messages from DB
+                messages = cursor.fetchall()
+
+                chatConn.close()
+
+            with generalConn.cursor() as cursor:
+                # Execute Select Chat
+                cursor.execute('SELECT * FROM chats WHERE "chatId" = %s',(chatId, ))
+                data = cursor.fetchone()
+
+                # Turn data to dict
+                dataDict = toDict(data,"c")
+
+                if dataDict:
+                    # Add messages to Dict
+                    dataDict["messages"] = messages
+                else:
+                    return {}
+                
+            return dataDict
+
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getChatInfo] psycopg2.ProgrammingError: {e}")
+            chatConn.rollback()
+            chatConn.close()
+            generalConn.rollback()
+            generalConn.close()
+            return {}
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            chatConn = chatsConnect()
+            generalConn = connect()
+        except psycopg2.InterfaceError:
+            chatConn = chatsConnect()
+            generalConn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getChatInfo] Unknown Exception: {e}")
+            chatConn.rollback()
+            chatConn.close()
+            generalConn.rollback()
+            generalConn.close()
+            return {}
+
+
+def createChat(chatId: str, firstUserId: str, SecondUserId: str) -> bool:
+    """
+    Create a chat in Database
+
+    Inputs:
+    chatId:         str
+    firstUserId:    str
+    secondUserId:   str
+
+    Outputs:
+    status:         bool
+    """
+
+    # Create new connection with Chat Database
+    chatConn = chatsConnect()
+    generalConn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+
+            # Create new cursor
+            with chatConn.cursor() as cursor:
+                cursor.execute('CREATE TABLE %s (like test);',(chatId, ))
+                
+                chatConn.commit()
+
+                chatConn.close()
+
+            with generalConn.cursor() as cursor:
+                cursor.execute('INSERT INTO chats ("chatId", "firstUserId", "secondUserId") VALUES (%s,%s,%s)',
+                               (chatId, firstUserId, SecondUserId, ))
+                
+                generalConn.commit()
+
+                generalConn.close()
+
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getChatInfo] psycopg2.ProgrammingError: {e}")
+            chatConn.rollback()
+            chatConn.close()
+            generalConn.rollback()
+            generalConn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            chatConn = chatsConnect()
+            generalConn = connect()
+        except psycopg2.InterfaceError:
+            chatConn = chatsConnect()
+            generalConn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getChatInfo] Unknown Exception: {e}")
+            chatConn.rollback()
+            chatConn.close()
+            generalConn.rollback()
+            generalConn.close()
             return False
