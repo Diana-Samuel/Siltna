@@ -1,6 +1,6 @@
 import psycopg2
 
-from utils import timenow
+from modules.utils import timenow
 
 import pyconf
 config = pyconf.read_ini("db.ini")
@@ -35,13 +35,13 @@ def addLog(log: str) -> bool:
     while True:
         try:
             # Fetch Detailed Time
-            time = timenow(ifDetailed=True)
+            time, dt = timenow(ifDetailed=True)
 
             # Create new Cursor
             with conn.cursor() as cursor:
 
-                # Insert Logs value to Logs Table
-                cursor.execute("INSERT INTO logs (log,date) VALUES (%s,%s)",(log,time,))
+                # Insert Logs value to Logs table
+                cursor.execute("INSERT INTO logs (log,date,'detailedDate') VALUES (%s,%s,%s)",(log,time,dt))
                 
                 # Commit Changes to the Database
                 conn.commit()
@@ -53,7 +53,6 @@ def addLog(log: str) -> bool:
             
         # Handling Programming Errors
         except psycopg2.ProgrammingError as e:
-            addLog(f"[addLog] psycopg2.ProgrammingError: {e}")
             conn.rollback()
             conn.close()
             return False
@@ -66,7 +65,6 @@ def addLog(log: str) -> bool:
 
         # Handling Unknown Exceptions
         except Exception as e:
-            addLog(f"[addLog] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
             return False

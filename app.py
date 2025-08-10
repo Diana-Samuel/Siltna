@@ -1,250 +1,433 @@
-from flask import Flask, render_template, request, jsonify, session, url_for, send_file, redirect
-from werkzeug.utils import secure_filename
+from flask import Flask, url_for, redirect      # Handle Functions and URL Works
+from flask import request, jsonify, session     # Handle APIs and Requests
+from flask import render_template, send_file    # For File Handling with Flask
+from flask import abort                         # Error handling with flask
+from werkzeug.utils import secure_filename      # Handle File uploads
+from flask_session import Session               # Advanced Flask Session
+import redis                                    # For Session handling
+from flask_socketio import SocketIO, emit       # Handle websocket events
+from flask_socketio import join_room,leave_room # Handle websocket Room
 
-import os
+from io import BytesIO                          # Handle showing Raw Images
 import datetime
-from io import BytesIO
+import json
+import time
+import os
 
-import db
-import enc
-import algorithm as alg
-import verify as verf
-from utils import *
-from exception import UploadError
+# Local Files and Fucntion
+from modules import algorithm as alg
+from modules import verify as verf
+from modules import exception
+from modules import utils
+from modules import enc
+from modules import db
 
 import pyconf
 
-s_conf = pyconf.read_ini("app.ini")
+conf = pyconf.read_ini("app.ini")
+
+
 
 app = Flask(__name__)
 
-app.secret_key = s_conf["secret_key"]
+app.config['SESSION_TYPE'] = 'redis'
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_KEY_PREFIX'] = 'sess:'
+app.config['SESSION_REDIS'] = redis.from_url("redis://localhost:6379")
+app.secret_key = conf["secret_key"]
+
+# Create new advanced session
+Session(app)
+
+# Make webSocket server
+Socket = SocketIO(app)
+
+# Redis Cache System for chat
+app.config['CHAT_KEY_PREFIX'] = 'chat:'
+app.config['CHAT_REDIS'] = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+# Redis Cache for user status
+app.config['USER_KEY_PREFIX'] = 'user:'
+app.config['USER_REDIS'] = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 
+# Make sessions Permenant
+@app.before_request
+def make_session_permanent():
+    session.permanent = True
 
-
-@app.route("/",methods=["POST","GET"])
+# Index
+@app.route("/")
 def index():
-    if request.method == "POST" and "createpost" in request.form:
-        try:
-            if session["loggedin"] == True:
-                if ("file" not in request.files or request.files["file"].filename == "") and request.form["text"].strip() == "":
-                    return url_for(index)
-                try:
-                    text = request.form["text"]
-                    files = request.files.getlist("file")
-                    fileList = []
-                    for i,file in enumerate(files):
-                        if file and allowed_file(file.filename):
-                            filename = secure_filename(file.filename)
-                            filepath = os.path.join('static/uploads',f"{i}_{session['id']}_{filename}")
-                            file.save(filepath)
-                            fileList.append(filepath)
-                    status = db.createPost(text,fileList,session['id'])
-                    if not status:
-                        return render_template("index.html",msg="Upload did not success")
-                except Exception as e:
-                    raise e
-                finally:
-                    for i,file in enumerate(fileList):
-                        os.remove(file)
-                    return render_template("index.html",msg="Post created")
-            else:
-                return render_template("index.html",msg="Please log in before making a post")
-        except KeyError:
-            return render_template("index.html",msg="Please log in before making a post")
-    else:
-        return render_template("index.html")
+    try:
+        userId = session["id"]
+    except KeyError:
+        userId = ""
+    return render_template("index.html", userId = userId)
 
-@app.route("/getPosts",methods=["GET"])
-def getposts():
-    if request.method == "GET":
-        try:
-            if not session["loggedin"] == True:
-                return jsonify({"status":"failed","error":"You Must be logged in"})
-        except KeyError:
-            return jsonify({"status":"failed","error":"You Must be logged in"})
-
-        try:
-            userid = session["id"]
-            posts = alg.postArrange(db.getRandomPosts(),userid)
-            decPosts = []
-            for i in posts:
-                post = []
-                postid = i[0]
-                posterid = i[1]
-                date = i[-2]
-                text = i[2]
-                image = i[3]
-                if len(image) > 0:
-                    images = []
-                    for i in range(len(image)):
-                        images.append(f"<img src='/p/{postid}/i/{i}'>")
-                if len(text) > 0:
-                    text = enc.decrypt(text,date,'p')
-                else:
-                    text = ""
-                post.append(text)
-                post.append(images)
-                post.append(str(date))
-                posterdata = db.getuserinfo(posterid)
-                postdate = posterdata[-2]
-                postername = enc.decrypt(posterdata[1],postdate,'u')
-                poster = [posterid,postername]
-                decPosts.append([poster,post])
-            return jsonify({"status":"success","posts": decPosts})
-        except Exception as e:
-            print(f"Get POSTS {e}")
-            raise
-            return jsonify({"status":"failed","error": str(e)})
-        
-
+# Login and signup
 @app.route("/auth", methods=["POST","GET"])
 def auth():
+    # Check if user already Signed Up
     if session:
-        return redirect(url_for("index"))    
+        return redirect(url_for("index"))
+    
+    # Check if user is signing Up
     if request.method == "POST" and "name" in request.form:
+        # Get values from Form 
         name = request.form["name"]
-        pw = request.form["password"]
+        password = request.form["password"]
         email = request.form["email"]
-        date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
-        pwStatus, msg = checkPass(pw)
+        date = utils.timenow()
+        
+        # Check password Strength
+        pwStatus, msg = utils.checkPass(password)
         if not pwStatus:
-            return render_template("auth.html",msg=msg)
-        regStatus, userid = db.adduserinfo(name,pw,email)
+            return render_template("auth.html",msg = msg)
+        
+        # Register user
+        regStatus, value = db.addUserInfo(name,password,email)
+
+        # Check if registeration succeed
         if regStatus:
-            msg = "Registeration Completed Successfully"
-            verf.sendLink(email,f"{enc.encryptVerify(db.getuserinfo(userid)[1])}")
+            msg = "Registeration Completed Successfully, Please Verify and Login with your account."
+            
+            # Send Verification Link
+            verf.sendLink(email,f"https://siltna.dpdns.org/verify/{enc.encryptVerify(str(value))}")
             return render_template("auth.html",msg=msg)
         else:
-            return render_template("auth.html",msg="Error registering")
-
-    elif request.method == "POST" and "login" in request.form:
-        email = request.form["email"]
-        pw = request.form["password"]
-        if not db.checkEmail(email):
-            return render_template("auth.html",msg="There is no accounts associated with that email address")
+            return render_template("auth.html",msg=value)
         
-        if enc.checkpw(pw,db.getuserinfo_byemail(email)[4]):
-            if not db.checkVerified(db.getuserinfo_byemail(email=email)[0]):
-                return render_template("auth.html",msg="You are not verified")            
+    # check if user is logging in
+    if request.method == "POST" and "login" in request.form:
+        # Get values from Form
+        email = request.form["email"]
+        password = request.form["password"]
+
+        # Check if email Exists
+        if not db.checkEmail(email):
+            return render_template("auth.html",msg="There is no accounts associated with this Email")
+        
+        # Check if password matches and if verified
+        if enc.checkpw(password,db.getUserInfo(None,email,useEmail=True)["password"]):
+            # Check if user is verified
+            if not db.checkVerified(db.getUserInfo(email=email,useEmail=True)["id"]):
+                return render_template("auth.html",msg="Account is Not Verified, Please check Email or contact Support.")
+            
             else:
-                session['name'] = db.getuserinfo_byemail(email)[1]
-                session['id'] = db.getuserinfo_byemail(email)[0]
-                session['loggedin'] = True
+                # create new session
+                userInfo = db.getUserInfo(email=email,useEmail=True)
+                privateKey = db.getPrivateKey(userId=userInfo["id"])
+                
+                session["loggedin"] = True
+                session["id"] = userInfo["id"]
+                session["name"] = userInfo["name"]
+                session["privateKey"] = enc.decryptPrivateKey(privateKey,password)
+
                 return redirect(url_for("index"))
         else:
-            return render_template("auth.html",msg="The email or Password is incorrent") 
+            return render_template("auth.html",msg="The email or Password is incorrent")
     else:
-        return render_template("auth.html",msg="Opening the paeg")
+        return render_template("auth.html")
 
 
+# Logout
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("index"))
 
-@app.route("/p/<postid>",methods=["POST","GET"])
-def post(postid):
-    if request.method == "GET":
-        success, data = db.getPost(postid=postid)
-        if success:
-            image = data[3]
-            text = data[2]
-            date = data[-2]
 
-            date = date.strftime("%Y-%m-%d")
 
-            if len(image) > 0:
-                images = []
-                for i in range(len(image)):
-                    images.append(f"<img src='/p/{postid}/i/{i}'>")
-            if len(text) > 0:
-                text = enc.decrypt(text,date,'p')
+#####################################
+#           USERS INFO              #
+#####################################
+#
+# Handles User Profile, Images 
+# And everything associated with him
+# 
+#####################################
+
+@app.route("/u/<userId>")
+def user(userId):
+    # Check if user exists 
+    if not db.checkID(userId):
+        # Return 404 Error
+        return abort(404)
+    
+    # Get user info from Database
+    userInfo = db.getUserInfo(userId)
+
+    # Get User informations
+    date = userInfo["date"]
+    date = date.strftime("%Y-%m-%d")
+
+    # Get name and decrypt it
+    name = userInfo["name"]
+    name = enc.decrypt(name,date,"u")
+
+    return render_template("userInfo.html",
+                           name=name,
+                           profilePic=f"<img src='/u/{userId}/icon'>")
+
+
+# Handle User Icon
+@app.route("/u/<userId>/icon")
+def userIcon(userId):
+    # Check if user exists 
+    if not db.checkID(userId):
+        # Return 404 Error
+        return abort(404)
+    
+    # Get user Data from Database
+    userData = db.getUserInfo(userId)
+
+    date = userData["date"]
+    icon = userData["profilePic"]
+
+    # Check if there is user Icon
+    if icon:
+        if len(icon) > 0:
+            # Decrypt user icon
+            image = enc.decryptFile(icon,date)
+
+            # Return Image data decrypted
+            return send_file(BytesIO(image), mimetype="image/png")
+        else:
+            # If not return Empty Icon
+            return send_file("static/images/emptyicon.png", mimetype="image/png")
+    else:
+        # If not return Empty Icon
+        return send_file("static/images/emptyicon.png", mimetype="image/png")
+
+
+
+#####################################
+#           POSTS INFO              #
+#####################################
+#
+# Handle Post Showing, Post Creation
+# and anything Related to Posts
+# 
+#####################################
+
+# Get Posts for Index
+@app.route("/getPosts", methods=["GET"])
+def getPosts():
+    try:
+        if not session.get("loggedin"):
+            return jsonify({"status": "failed", "error": "You Must be Logged in"})
+
+        userId = session["id"]
+        posts = []
+        post_ids = set()
+        
+        all_seen_post_ids = set()
+
+        while len(posts) < 10:
+            randomPosts = db.getRandomPosts(100)
+            
+            # If no posts are returned, we've exhausted the database
+            if not randomPosts:
+                break
+
+            algPosts = alg.postArrange(randomPosts, userId)
+
+            # Check if all posts returned by the algorithm have already been seen
+            current_seen_count = 0
+            for post in algPosts:
+                if post["id"] in all_seen_post_ids:
+                    current_seen_count += 1
+            
+            if len(algPosts) > 0 and current_seen_count == len(algPosts):
+                break
+
+            for post in algPosts:
+                if post["id"] not in post_ids:
+                    posts.append(post)
+                    post_ids.add(post["id"])
+                    
+                all_seen_post_ids.add(post["id"]) # Add to the master list of seen posts
+
+                if len(posts) >= 10:
+                    break
+
+        # Check if we found any posts at all before proceeding
+        if not posts:
+            return jsonify({"status": "success", "posts": []})
+
+        decPosts = []
+        for post in posts:
+            postId = post["postId"]
+            posterId = post["posterId"]
+            date = post["date"]
+            text = post["text"]
+            images = post["images"]
+            tags = post["tags"]
+
+            imagesPath = []
+            if "image" in tags:
+                for i in range(len(images)):
+                    imagesPath.append(f"<img src='/p/{postId}/i/{i}'>")
+
+            if "text" in tags:
+                text = enc.decrypt(text, date, "p")
             else:
                 text = ""
-            return render_template("post.html",images=images,text=text)
-        else:
-            return render_template("post.html",msg="Failed")
 
+            posterData = db.getUserInfo(posterId)
+            if posterData:
+                posterName = enc.decrypt(posterData["name"], posterData["date"])
+                decPosts.append([[posterId, posterName], [text, imagesPath, str(date)]])
+            else:
+                continue 
 
+        return jsonify({"status": "success", "posts": decPosts})
 
-@app.route("/p/<postid>/i/<i>")
-def postImage(postid,i):
-    success,data = db.getPost(postid)
-    try:
-        if success:
-            image = data[3]
-            date = data[-2]
-            
-            imageData = enc.decryptFile(image[int(i)],date=date)
-            return send_file(BytesIO(imageData),mimetype="image/png")
-        else:
-            print(f"Error rendering image {data}")
-            return send_file("static/images/notfound.png",mimetype="image/png")
-    except IndexError:
-        return send_file("static/images/notfound.png",mimetype="image/png")
+    except KeyError:
+        return jsonify({"status": "failed", "error": "You Must be Logged in"})
+    except Exception as e:
+        return jsonify({"status": "failed", "error": str(e)})
 
-
-
-
-
-@app.route("/u/<userid>",methods=["POST","GET"])
-def user(userid):
+# Getting Post info
+@app.route("/p/<postId>",methods=["GET"])
+def post(postId):
+    # Check if method is "GET"
     if request.method == "GET":
-        if not db.checkID(userid):
-            return render_template("error404.html")
-        info = db.getuserinfo(userid)
-        date = info[-2]
-        date = date.strftime("%Y-%m-%d")
-        name = enc.decrypt(info[1],date=date,encType="u")
-        email = info[2]
+        # Get post data
+        status, postData = db.getPost(postId)
 
-        
-        return render_template("userinfo.html",info=f"<div><h1>Name: {name}</h1><p>Email: {email}</p></div>")
-    elif request.method == "POST":
-        try:
-            if not db.checkID(userid):
-                return jsonify({"status": "Failed","Error": "404"})
-            info = db.getuserinfo(userid)
-            date = info[-2]
+        # If getting post worked
+        if status:
+            # Get important data
+            images = postData["images"]
+            text   = postData["text"]
+            tags   = postData["tags"]
+            date   = postData["date"]
+
+            # TODO: Get Detailed Data and add When Post is Posted
+            # Example (an hour ago, date)
+
             date = date.strftime("%Y-%m-%d")
-            name = enc.decrypt(info[1],date=date,encType="u")
-            email = info[2]
-            phone = info[3]
-            if phone != None:
-                phone = enc.decrypt(info[3],date=date,encType="u")
-            return jsonify({"status":"success","name": name,"email": email,"phone": phone})
-        except Exception as e:
-            return jsonify({"status": "Failed","Error": str(e)})
 
+            # Check if post has images
+            if "image" in tags:
+                # Add image Path
+                imagesPath = []
+                for i in range(len(images)):
+                    imagesPath.append(f"<img src='/p/{postId}/i/{i}")
+            
+            # Check if post has Text
+            if "text" in tags:
+                # Decrypt Text
+                textDec = enc.decrypt(text,date,"p")
+            else:
+                textDec = ""
 
-@app.route("/u/<userid>/icon/")
-def usericon(userid):
-    data = db.getuserinfo(userid)
-    date = data[-2]
-    icon = data[-3]
-    if len(icon) > 0:
-        imageData = enc.decryptFile(icon,date)
+            # Return Post Values
+            return render_template("post.html",images=imagesPath,text=textDec)
+        else:
+            # Return post.html with Error
+            return render_template("post.html",msg=postData)
     else:
-        return send_file("static/images/emptyicon.png", mimetype="image/png")
-    return send_file(BytesIO(imageData),mimetype="image/png")
+        # Give Forbidden Error
+        abort(403)
 
 
 
-@app.route("/verify/<userid>")
-def verify(userid):
-    userid = enc.decryptVerify(userid)
-    if not db.checkID(userid):
-        msg = "cannot find the user. Please check your Email for the link"
+# Post Images
+@app.route("/p/<postId>/i/<i>",methods=["GET"])
+def postImage(postId,i):
+    if request.method == "GET":
+        # Get Post Info
+        status, postData = db.getPost(postId)
 
-    return render_template("verify.html",msg=msg)
+        # Check if succeed
+        if status:
+            # To prevent Index Errors 
+            try:
+                # Get images from Post
+                images = postData["images"]
+                date = postData["date"]
+
+                # decrypt image
+                imageData = enc.decryptFile(images[int(i)],date)
+
+                return send_file(BytesIO(imageData), mimetype="image/png")
+            except IndexError:
+                # Send notfound Image
+                send_file("static/images/notfound.png",mimetype="image/png")
+        else:
+            # Return not found Error
+            return send_file("static/images/notfound.png",mimetype="image/png")
+    else:
+        # Return Forbidden Error
+        abort(403)
+
+
+# Create Posts
+@app.route("/createPost", methods=["POST"])
+def createPost():
+    # Check if request is to create Post and method is POST
+    if request.method == "POST" and "createpost" in request.form:
+        # Check if user is Logged in
+        try:
+            if not session["loggedin"]:
+                return jsonify({"status": "failed","error": "You Must be Logged in"})
+        except KeyError:
+            return jsonify({"status": "failed","error": "You Must be Logged in"})
+    
+        # Post creation Handling
+        try:
+            # Get Text and Images from Request
+            text = request.form["text"]
+            files = request.files.getlist("file")
+
+            # Handle acception of files
+            fileList = []
+            for i, singleFile in enumerate(files):
+                # Check if file uploaded and allowed
+                if singleFile and utils.allowed_file(singleFile):
+                    # Check if it has secure name
+                    fileName = secure_filename(singleFile.filename)
+
+                    # Create new Path for the File
+                    filePath = os.path.join('static/uploads',f"{i}_{session['id']}_{fileName}")
+
+                    # Save file Locally
+                    singleFile.save(filePath)
+
+                    # Append path to total files
+                    fileList.append(filePath)
+
+            # Create Post
+            creationStatus, Error = db.createPost(text,fileList,session['id'])
+
+            # If error happened 
+            if not creationStatus:
+                return render_template("index.html",msg=str(Error))
+
+        except Exception as e:
+            raise e
+        finally:
+            # Remove all images uploaded
+            for filePath in fileList:
+                os.remove(filePath)
+            
+            return render_template("index.html",msg="Post Created")
+    
+    # If methods wasn't "POST"
+    else:
+        return redirect(url_for("/"))
+    
 
 
 
 
 """
-Statics
+BASIC Statics
 """
 
 @app.route("/static/icon.webp")
@@ -261,8 +444,254 @@ def staticfullicon():
 
 
 
-if __name__ == '__main__':
-    app.run(debug=True,
-            port=5000,
-            host="0.0.0.0")
+#####################################
+#           CHATS HANDLE            #
+#####################################
+@app.route("/c/<chatId>")
+def chat(chatId):
+    # Get needed info (userId)
+    userId = session["id"]
+
+    return render_template("chat.html", chatId=chatId,userId=userId)
+
+
+# Check online status of user
+@app.route("/c/u/<userId>/checkStatus")
+def checkOnlineStatus(userId):
+    # Get redis server
+    redisServer = app.config["USER_REDIS"]
+
+    # To prevent Unknown Errors
+    try:
+        # Get value from redis server
+        value = redisServer.hgetall(f"{app.config['USER_KEY_PREFIX']}{userId}")
+        
+        # Check if value empty
+        if value:
+            # Get status of user
+            status = bool(int(value["status"]))
+            return jsonify({"status": status})
+        else:
+            return jsonify({"status": False})
+
+    # Handle unknown Errors
+    except Exception as e:
+        return jsonify({"status": False})
+
+
+@app.route("/c/<chatId>/msgs")
+def getMessages(chatId):
+    # Get chat id from session
+    userId = session["id"]
+    privateKey = session["privateKey"]
+    # Check if chat Exitst
+    chatInfo = db.getChatInfo(chatId,userId)
+
+    if chatInfo:
+        # Get Redis Chat server
+        redisServer = app.config["CHAT_REDIS"]
+
+        chatCache = redisServer.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+
+        if chatCache:
+            for i in json.loads(chatCache["messages"]):
+                chatInfo["messages"].append(i)
+
+        messages = []
+        for msg in chatInfo["messages"]:
+            if str(msg["senderId"]) == str(userId):
+                message = enc.decryptMessage(msg["senderMessage"],privateKey)
+            else:
+                message = enc.decryptMessage(msg["receiverMessage"],privateKey)
+                    
+            data = {
+                "senderId": msg["senderId"],
+                "receiverId": msg["receiverId"],
+                "message": message,
+                "dateSend": msg["dateSend"],
+                "detailedDate": msg["detailedDate"]
+            }
+            messages.append(data)
+
+
+        chatInfo["messages"] = messages
+        return jsonify(chatInfo)
+    else:
+        return jsonify({})
+
+
+@Socket.on("joinChat")
+def joinChat(data):
+    # Get redis server
+    chatRedis = app.config["CHAT_REDIS"]
+    userRedis = app.config["USER_REDIS"]
+
+    # Get userid from session
+    userId = session["id"]
+    chatId = data["chatid"]
+
+    # set status of user in Cache
+    userRedis.hset(f"{app.config['USER_KEY_PREFIX']}{userId}", mapping={
+        "userId": userId,
+        "status": 1
+    })
+
+    # Get public Key
+    chatInfo = db.getChatInfo(chatId, userId)
+
+    if chatInfo["firstUserId"] == userId:
+        receiverId = chatInfo["secondUserId"]
+    else:
+        receiverId = chatInfo["firstUserId"]
+
+    receiverPublicKey = db.getPublicKey(receiverId)
+    senderPublicKey = db.getPublicKey(userId)
+
+    # Get usernames
+    senderData = db.getUserInfo(userId)
+    receiverData = db.getUserInfo(receiverId)
+
+    senderName = enc.decrypt(senderData["name"],senderData["date"])
+    receiverName = enc.decrypt(receiverData["name"],receiverData["date"])
+
+    # add Chat in Cache
+    messages = []
+    chatRedis.hset(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}", mapping={
+        "chatId": chatId,
+        "messages": json.dumps(messages),
+        "senderId": userId,
+        "receiverId": receiverId,
+        userId: senderPublicKey,
+        receiverId: receiverPublicKey,
+        f"{userId}_name": senderName,
+        f"{receiverId}_name": receiverName
+    })
+
+    # make user join room
+    join_room(chatId)
+
+    # emit usernames
+    emit("receiveNames",{"senderId": userId,
+                         "receiverId": receiverId,
+                         "senderName": senderName,
+                         "receiverName": receiverName}
+
+                         ,room=chatId)
+
+
+
+@Socket.on("leaveChat")
+def leaveChat(data):
+    # Get redis server
+    chatRedis = app.config["CHAT_REDIS"]
+    userRedis = app.config["USER_REDIS"]
+
+    # Get userid from session
+    userId = session["id"]
+    chatId = data["chatid"]
+
+    # Get data from Cache and save it to DB
+    Cache = chatRedis.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+
+    if Cache:
+        messages = Cache["messages"]
+
+        messages = json.loads(messages)
+
+        for message in messages:
+            db.addToChat(Cache["chatId"], message, userId)
     
+    
+    # set status of user in Cache
+    userRedis.hset(f"{app.config['USER_KEY_PREFIX']}{userId}", mapping={
+        "userId": userId,
+        "status": 0
+    })
+
+    # delete Chat from Cache
+    chatRedis.delete(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+
+    # make user leave room
+    leave_room(chatId)
+
+
+
+@Socket.on("send_message")
+def sendMessage(data):
+    # Get redis server
+    chatRedis = app.config["CHAT_REDIS"]
+
+    # Get needed Data
+    chatId  = data["chatid"]
+    message = data["message"]
+    userId  = session["id"]
+    dateSent = utils.timenow()
+    dt = utils.timenow(ifDetailed=True)
+
+    cacheData = chatRedis.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+
+    receiverId = cacheData["receiverId"]
+    receiverPublicKey = cacheData[receiverId]
+    senderPublicKey = cacheData[userId]
+
+    receiverMessage = enc.encryptMessage(message, receiverPublicKey)
+    senderMessage = enc.encryptMessage(message, senderPublicKey)
+
+    # Create chat details
+    messageInfo = {
+        "senderId": userId,
+        "receiverId": receiverId,
+        "senderMessage": senderMessage,
+        "receiverMessage": receiverMessage,
+        "dateSend": dateSent,
+        "detailedDate": dt
+    }
+
+    # add message to Redis Cache
+    senderCache = chatRedis.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+    receiverCache = chatRedis.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{receiverId}")
+
+    if receiverCache:
+        senderMessages = json.loads(senderCache["messages"])
+        senderMessages.append(messageInfo)
+        receiverMessages = json.loads(receiverCache["messages"])
+        receiverMessages.append(messageInfo)
+
+        senderCache["messages"] = json.dumps(senderMessages)
+        receiverCache["messages"] = json.dumps(receiverMessages)
+
+        chatRedis.delete(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+        chatRedis.delete(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{receiverId}")
+
+        chatRedis.hset(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}",mapping = senderCache)
+        chatRedis.hset(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{receiverId}",mapping = receiverCache)
+
+    else:
+        senderMessages = json.loads(senderCache["messages"])
+        senderMessages.append(messageInfo)
+
+        senderCache["messages"] = json.dumps(senderMessages)
+
+        chatRedis.delete(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+
+        chatRedis.hset(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}",mapping = senderCache)
+
+    
+    messageInfo["message"] = message
+
+    emit("receive_message", messageInfo, room=chatId)
+        
+
+# Static js for chat
+@app.route("/static/chat.js")
+def chatjs():
+    return send_file("static/js/chat.js")
+
+
+
+
+
+
+if __name__ == "__main__":
+    # run app
+    app.run(debug=True, host="0.0.0.0", port=5000)

@@ -1,6 +1,8 @@
 flask
+flask-session
 pillow
-psycopg2
+psycopg2-binary
 argon2
 bcrypt
 cryptography
+redis

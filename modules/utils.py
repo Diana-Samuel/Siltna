@@ -54,22 +54,21 @@ def toWebp(filePath,savePath):
 
 
 
-def timenow(ifDetailed = False) -> str:
+def timenow(ifDetailed=False) -> str:
     """
     Returns The Time in UTC
-    Return Value:       Year-Month-Day
+    Return Value:       Year-Month-Day or with time if ifDetailed is True
     """
 
-    # Set the datetime zone to set it as static
-    time = datetime.datetime.now(datetime.UTC)
+    # Set the datetime to UTC
+    time = datetime.datetime.now(datetime.timezone.utc)
     
-    # Get The values of year-month-day
+    # Get the date part
     t = time.strftime("%Y-%m-%d")
 
-    # Check if User Requested Details
     if ifDetailed:
         dt = detailedTime(time)
-        return f"{t}:{dt}"
+        return t, dt
     else:
         return t
 

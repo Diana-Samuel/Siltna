@@ -1,7 +1,7 @@
 import smtplib
 from email.message import EmailMessage
 
-from db import verify, checkID
+from modules.db import checkVerified, checkID
 
 import pyconf
 
@@ -29,7 +29,7 @@ def verifyUser(userid: str):
     try:
         if not checkID(userid):
             return False
-        verify(userid)
+        checkVerified(userid)
 
     except Exception as e:
         print(f"Error verifying User With id {userid}: {e}")

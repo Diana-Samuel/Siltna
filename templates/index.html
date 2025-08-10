@@ -10,10 +10,13 @@
                 overflow-x: hidden;
                 overflow-y: scroll;
             }
-            #createPost {
-                display: none;
-                transition: all 1s ease-in;
+
+            input:focus,
+            textarea:focus {
+                outline: none;
+                box-shadow: none;
             }
+
             .post {
                 background:linear-gradient(to bottom right,#1A1F2E,#3B82F6);
                 width:calc((100%/4)* 1.618);
@@ -99,6 +102,44 @@
                 height: calc(100% / 3);
             }
 
+
+            #createPost {
+                display: none;
+                transition: all 1s ease-in;
+                background: #111418;
+                width: 40%;
+                height: 500px;
+                border: #1A1F2E solid 2px;
+                border-radius: 10px;
+                box-shadow: #3B82F6 4px 3px 7px 2px;
+                margin-top: 10%;
+
+                align-content: center;
+            }
+            #textInput {
+                width: 90%;
+                height: 350px;
+                background: #ffffff00;
+                border: #1A1F2E solid 1px;
+                border-radius: 10px;
+                margin: 0;
+
+                resize: none;
+
+                color: #E4E7EC;
+                font-size: 25px;
+            }
+
+            #createPostSubmit {
+                width: 125px;
+                height: 50px;
+                border-radius: 20px;
+                background: #ffffff00;
+                border: #1A1F2E solid 1px;
+                color: #E4E7EC;
+                cursor: pointer;
+            }
+            
 </style>
     </head>
     <body>
@@ -116,7 +157,7 @@
                 </svg>
                 </button>
 
-                <img src="" alt="User" style="height: 35px; width: 35px; border-radius: 50%;" id="userimg">
+                <img src="/u/{{ userId }}/icon" alt="User" style="height: 35px; width: 35px; border-radius: 50%;" id="userimg">
             </div>
         </div>
         <div class="createNew">
@@ -133,11 +174,16 @@
         <center>
             <div id="createPost">
                 <form action="" method="POST" enctype="multipart/form-data">
-                    <div>
-                        <input name="text" type="text">
+                    <div style="height: 100%;">
+                        <textarea id="textInput" name="text"></textarea>
                     </div>
                     <div>
-                        <input name="file" type="file" multiple>
+                        <input id="fileInput" name="file" type="file" multiple style="display: none;">
+                        <label for="fileInput" style="display: block; width: 50px; height: 50px; border-radius: 50%; content: '+'; cursor: pointer; margin-top: 10px;margin-right: auto; margin-left: 25px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#E4E7EC">
+                                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h360q-20 26-30 57t-10 63q0 83 58.5 141.5T720-520q32 0 63-10t57-30v360q0 33-23.5 56.5T760-120H200Zm40-160h480L570-480 450-320l-90-120-120 160Zm440-320v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Z"/>
+                            </svg>
+                        </label>
                     </div>
                     <input type="text" name="createpost" style="display: none;">
                     <button type="submit" id="createPostSubmit">Create Post</button>
@@ -163,17 +209,21 @@
                 fetch("/getPosts")
                     .then(response => response.json())
                     .then(data => {
-                        console.log(data);
                         if (data["status"] == "success") {
                             let posts = data["posts"];
                             let final = [];
+
+                            if (posts.length < 1) {
+                                document.querySelector("#PostSection").innerHTML += "<div class='finishedPosts'> You have watched all possible posts.</div>";
+                            };
+
                             posts.forEach(info => {
                                 let post = info[1];
                                 let text = post[0];
                                 let images = post[1];
                                 let postdate = post[2];
-                                let postername = info[0][1]
-                                let posterid = info[0][0]
+                                let postername = info[0][1];
+                                let posterid = info[0][0];
                                 let htmlPost = "<div class='post'><div class='posterInfo'><a href='/u/"
                                                 +posterid+
                                                 "'>"
@@ -189,8 +239,15 @@
                             });
                             document.querySelector("#PostSection").innerHTML += final.join("");
                         }
+                        else {
+                            console.log(data["error"]);
+                        };
+                    })
+                    .catch(error => {
+                        console.error("Fetch failed:", error);
                     });
             }
+
             document.addEventListener("DOMContentLoaded",() => {
                 AddPosts();
             })

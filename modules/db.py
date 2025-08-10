@@ -3,15 +3,16 @@ import psycopg2
 import random
 import json
 
-import utils
-import logs
-import enc
+from modules import utils
+from modules import logs
+from modules import enc
 
 from typing_extensions import Literal
-idTypes = Literal["u","p"]
+idTypes = Literal["u","p","c","cm"]
 tables = {
             "u": "users",
-            "p": "posts"
+            "p": "posts",
+            "c": "chat"
          }
 
 import pyconf
@@ -29,6 +30,17 @@ def connect():
 
     return conn
 
+
+def chatsConnect():
+    conn = psycopg2.connect(
+        database    =   config["chatdb"],
+        host        =   config["host"],
+        user        =   config["user"],
+        password    =   config["password"],
+        port        =   config["port"]
+    )
+
+    return conn
 
 
 def randomid(length: int) -> str:
@@ -84,9 +96,9 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
         name        = data[1]   # Name of User
         email       = data[2]   # Email
         password    = data[4]   # Password
-        phone       = data[5]   # Phone Number
-        verified    = data[6]   # If user is verified
-        note        = data[7]   # Note added by admins
+        phone       = data[3]   # Phone Number
+        verified    = data[5]   # If user is verified
+        note        = data[6]   # Note added by admins
         profilepic  = data[-3]  # Profile Picture of User
         date        = data[-2]  # Date of creation
         following   = data[-1]  # Pages Followed By user
@@ -103,6 +115,7 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
                         "date": date,
                         "following": following
                     }
+        
         return userDict
 
     if dataType == "p":
@@ -131,6 +144,39 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
         
         return postDict
     
+    if dataType == "c":
+        # Divide Chat data to Pieces
+        chatId          = data[0]   # Chat id
+        firstUserId     = data[1]   # Creator of chat (userId)
+        secondUserId    = data[2]   # Other Side of chat (userId)
+
+        chatDict =  {
+                        "chatId": chatId,
+                        "firstUserId": firstUserId,
+                        "secondUserId": secondUserId
+                    }
+        
+        return chatDict
+    
+    if dataType == "cm":
+        # Divide Message data to Pieces
+        senderId = data[0]
+        receiverId = data[1]
+        senderMessage = data[2]
+        receiverMessage = data[3]
+        dateSend = data[-2]
+        detailedDate = data[-1]
+
+        messageDict = {
+            "senderId": senderId,
+            "receiverId": receiverId,
+            "senderMessage": senderMessage,
+            "receiverMessage": receiverMessage,
+            "dateSend": dateSend,
+            "detailedDate": detailedDate
+        }
+
+        return messageDict
 
 def checkID(ID: str, idType: idTypes = "u") -> bool:
     """
@@ -346,7 +392,7 @@ def addUserInfo(name: str, password: str, email: str) -> tuple[bool, str | None]
                 conn.close()
                 return False, "The User ID Already Exists"
             
-            if checkEmail(email,"u"):
+            if checkEmail(email):
                 conn.close()
                 return False, "The Email Address Already Exists"
             
@@ -366,17 +412,33 @@ def addUserInfo(name: str, password: str, email: str) -> tuple[bool, str | None]
                 conn.commit()
 
                 # Create Interests to User
-                # TODO ADD INTEREST TO USER USING FUNCTION CALLED createInterest(userId)
+                interestStatus, interestValue = createInterest(userId)
+
+                if not interestStatus:
+                    return False, f"Failed to create Interest: {interestValue}"
+                
+                # Create new Pair of Encyption Keys
+                e2eeStatus, (PublicKey, privateKey) = enc.createE2EEKeys(password)
+                
+                if not e2eeStatus:
+                    return False, "Failed to create Encryption Keys"
+                
+                # Send keys to DB
+                addtoKeyStatus , Value = addToKeys(userId,PublicKey,privateKey)
+
+                if not addtoKeyStatus:
+                    return False, Value
+                
 
                 conn.close()
-                return True, None
+                return True, userId
 
         # Handle Programming Errors
         except psycopg2.ProgrammingError as e:
             logs.addLog(f"[db.addUserInfo] psycopg.ProgrammingError {e}")
             conn.rollback()
             conn.close()
-            return False, None
+            return False, str(e)
         
         # Handle Database connection issues
         except psycopg2.OperationalError:
@@ -389,7 +451,8 @@ def addUserInfo(name: str, password: str, email: str) -> tuple[bool, str | None]
             logs.addLog(f"[db.addUserInfo] Unknown Exception {e}")
             conn.rollback()
             conn.close()
-            return False, None
+            raise e
+            return False, str(e)
         
 
 def chanfeVerificationStatus(userId: str, value: bool = True) -> tuple[bool,None|str]:
@@ -468,10 +531,10 @@ def checkVerified(userId: str) -> bool:
                 data = cursor.fetchone()
                 
                 # Turn data to dictionary
-                data = toDict(data)
+                dataDict = toDict(data)
 
                 conn.close()
-                return data["verified"]
+                return dataDict["verified"]
 
 
         # Handle Programming Errors
@@ -796,7 +859,7 @@ def getPost(postId: str) -> tuple[bool,dict]:
             return False
         
 
-def getRandomPosts(limit: int =20) -> list:
+def getRandomPosts(limit: int = 20) -> list:
     """
     Get Random Posts From the Database
 
@@ -853,7 +916,7 @@ def getRandomPosts(limit: int =20) -> list:
             return False
         
 
-def createInterest(userId: str) -> bool:
+def createInterest(userId: str) -> tuple[bool , None | str]:
     """
     Create Interest For the user
 
@@ -870,11 +933,6 @@ def createInterest(userId: str) -> bool:
     # Loop to Prevent Connection Errors
     while True:
         try:
-            # Check if userId Exists
-            if not checkID(userId,"u"):
-                conn.clsoe()
-                return False, "User ID Does Not Exists"
-
             # Create new cursor
             with conn.cursor() as cursor:
                 # Add Empty Interests
@@ -886,14 +944,14 @@ def createInterest(userId: str) -> bool:
 
                 conn.close()
 
-                return True
+                return True, None
             
         # Handle Programming Exceptions
         except psycopg2.ProgrammingError as e:
             logs.addLog(f"[db.createInterest] psycopg2.ProgrammingError: {e}")
             conn.rollback()
             conn.close()
-            return False
+            return False, str(e)
 
         # Handle Connection Errors
         except psycopg2.OperationalError:
@@ -906,7 +964,7 @@ def createInterest(userId: str) -> bool:
             logs.addLog(f"[db.createInterest] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
-            return False
+            return False, str(e)
         
 
 def getInterests(userId: str) -> list:
@@ -1007,7 +1065,7 @@ def getInterests(interest: str,userId: str) -> bool:
                 conn.close()
                 return True
 
-
+        # Handle Programming Errors
         except psycopg2.ProgrammingError as e:
             logs.addLog(f"[db.getInterest] psycopg2.ProgrammingError: {e}")
             conn.rollback()
@@ -1025,4 +1083,387 @@ def getInterests(interest: str,userId: str) -> bool:
             logs.addLog(f"[db.getInterest] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
+            return False
+        
+
+
+
+
+def addToKeys(userId: str, publicKey: str, privateKey: str) -> tuple[bool,None | str]:
+    """
+    Adds a Public Encryption Key to the Database For E2EE
+
+    Inputs:
+    userId:     str                 # User ID Needed for adding Key
+    publicKey:  str                 # Public Encyption Key
+    privateKey: str                 # Private Key
+
+    Outputs:
+    status:     bool                # Status of The Process
+    value:      str | None          # Error Text (None if no errors Occured)
+    """
+
+    # Create New connection with the Database
+    conn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Get Rightnow date
+            date = utils.timenow()
+
+            # Encrypt Keys  basic Encryption
+            publicKey  = enc.encrypt(publicKey,date,"u")
+            privateKey = enc.encrypt(privateKey,date,"u")
+
+
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Execute Insert Command
+                cursor.execute('INSERT INTO keys ("userId", "publicKey", "privateKey", "date") VALUES (%s,%s,%s,%s)',
+                               (userId, publicKey, privateKey, date, ))
+                
+                # Commit changes
+                conn.commit()
+
+                # Close connection Between Server and Database
+                conn.close()
+
+                return True, None
+
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.addToKeys] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.addToKeys] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+        
+def getPublicKey(userId: str) -> str:
+    """
+    Gets a Public Key from Database
+
+    Inputs:
+    userId:     str                     # User ID of user needed to get Public Key
+
+    Outputs:
+    publicKey:  str                     # Public Key of user
+    """
+
+    # Create new connection with Database
+    conn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Select Public Key
+                cursor.execute('SELECT "publicKey", date FROM keys WHERE "userId" = %s',
+                               (userId, ))
+                
+                data = cursor.fetchone()
+                publicKey = data[0]
+                date = data[1]
+
+
+                publicKey = enc.decrypt(publicKey,date,"u")
+
+                return publicKey
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getPublicKey] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getPublicKey] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+
+def getPrivateKey(userId: str) -> str:
+    """
+    Gets a Private Key from Database
+
+    Inputs:
+    userId:     str                     # User ID of user needed to get Private Key
+
+    Outputs:
+    Private:  str                       # Private Key of user
+    """
+
+    # Create new connection with Database
+    conn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Select Public Key
+                cursor.execute("""SELECT "privateKey", date FROM keys WHERE "userId" = %s""",
+                               (userId, ))
+                
+                data = cursor.fetchone()
+                privateKey = data[0]
+                date = data[1]
+
+                privateKey = enc.decrypt(privateKey,date,"u")
+
+                return privateKey
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            print(e)
+            logs.addLog(f"[db.getPrivateKey] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = connect()
+        except psycopg2.InterfaceError:
+            conn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            print(e)
+            logs.addLog(f"[db.getPrivateKey] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        
+def addToChat(chatId: str, message: str, userId: str) -> tuple[bool, None | str]:
+    """
+    add message to chat
+
+    Inputs:
+    chatId:     str                     # Chat ID for inserting message
+    message:    str                     # message to insert
+    userId:     str                     # user ID of the owner of the message
+
+    Outputs:
+    status:     bool                    # Status of message insertion
+    value:      str | None              # Value of Error
+    """
+
+    # Create new connection with Chat Database
+    conn = chatsConnect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Get timenow Date
+            date = utils.timenow()
+            dt = utils.timenow(ifDetailed=True)
+
+            # Create new cursor
+            with conn.cursor() as cursor:
+                # Get Info needed
+                table = f"{chatId}_{userId}"
+                senderId = message["senderId"]
+                receiverId = message["receiverId"]
+                senderMessage = message["senderMessage"]
+                receiverMessage = message["receiverMessage"]
+
+                # Execute insert message
+                cursor.execute("""INSERT INTO "%s" ("senderId", "receiverId", "senderMessage", "receiverMessage", "dateSend", "detailedDate") VALUES 
+                                    (%s, %s, %s, %s, %s, %s)""",
+                               (table, senderId, receiverId, senderMessage, receiverMessage, date, dt))
+                
+                conn.commit()
+
+                conn.close()
+
+                return True
+
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.addToChat] psycopg2.ProgrammingError: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            conn = chatsConnect()
+        except psycopg2.InterfaceError:
+            conn = chatsConnect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.addToChat] Unknown Exception: {e}")
+            conn.rollback()
+            conn.close()
+            return False
+
+
+
+def getChatInfo(chatId: str, userId: str) -> dict:
+    """
+    Get Chat info from db
+
+    Inputs:
+    chatId: str             # Chat ID needed to get the Chat info
+    userId: str             # User ID needed to get Chat Info
+    Outputs:
+    Info:   dict            # Dict that has info
+    """
+
+    # Create new connection with Chat Database
+    chatConn = chatsConnect()
+    generalConn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            # Get Table Name
+            tableName = f"{chatId}_{userId}"
+
+            # Create new cursor
+            with chatConn.cursor() as cursor:
+                # Execute Select Chat
+                cursor.execute('SELECT * FROM "%s"',(tableName, ))
+
+                # Get all messages from DB
+                messages = cursor.fetchall()
+
+                editedMessages = []
+                if isinstance(messages,list):
+                    for i in messages:
+                        editedMessages.append(toDict(i,"cm"))
+                elif isinstance(messages,tuple):
+                    editedMessages.append(toDict(messages,"cm"))
+
+                chatConn.close()
+
+            with generalConn.cursor() as cursor:
+                # Execute Select Chat
+                cursor.execute('SELECT * FROM chats WHERE "chatId" = %s',(chatId, ))
+                data = cursor.fetchone()
+                
+                # Turn data to dict
+                dataDict = toDict(data,"c")
+
+                if dataDict:
+                    # Add messages to Dict
+                    dataDict["messages"] = editedMessages
+                else:
+                    return {}
+                
+            return dataDict
+
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getChatInfo] psycopg2.ProgrammingError: {e}")
+            chatConn.rollback()
+            chatConn.close()
+            generalConn.rollback()
+            generalConn.close()
+            return {}
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            chatConn = chatsConnect()
+            generalConn = connect()
+        except psycopg2.InterfaceError:
+            chatConn = chatsConnect()
+            generalConn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getChatInfo] Unknown Exception: {e}")
+            chatConn.rollback()
+            chatConn.close()
+            generalConn.rollback()
+            generalConn.close()
+            return {}
+
+
+def createChat(chatId: str, firstUserId: str, SecondUserId: str) -> bool:
+    """
+    Create a chat in Database
+
+    Inputs:
+    chatId:         str
+    firstUserId:    str
+    secondUserId:   str
+
+    Outputs:
+    status:         bool
+    """
+
+    # Create new connection with Chat Database
+    chatConn = chatsConnect()
+    generalConn = connect()
+
+    # Loop to prevent Connection Errors
+    while True:
+        try:
+            tableNames = [f"{chatId}_{firstUserId}",f"{chatId}_{SecondUserId}"]
+            # Create new cursor
+            with chatConn.cursor() as cursor:
+                cursor.execute('CREATE TABLE "%s" (like test);',(tableNames[0], ))
+                cursor.execute('CREATE TABLE "%s" (like test);',(tableNames[1], ))
+
+                chatConn.commit()
+
+                chatConn.close()
+
+            with generalConn.cursor() as cursor:
+                cursor.execute('INSERT INTO chats ("chatId", "firstUserId", "secondUserId") VALUES (%s,%s,%s)',
+                               (chatId, firstUserId, SecondUserId, ))
+                
+                generalConn.commit()
+
+                generalConn.close()
+
+            return True
+        # Handle Programming Errors
+        except psycopg2.ProgrammingError as e:
+            logs.addLog(f"[db.getChatInfo] psycopg2.ProgrammingError: {e}")
+            chatConn.rollback()
+            chatConn.close()
+            generalConn.rollback()
+            generalConn.close()
+            return False
+
+        # Handle Connection Errors
+        except psycopg2.OperationalError:
+            chatConn = chatsConnect()
+            generalConn = connect()
+        except psycopg2.InterfaceError:
+            chatConn = chatsConnect()
+            generalConn = connect()
+
+        # Handle Unknown Exceptions 
+        except Exception as e:
+            logs.addLog(f"[db.getChatInfo] Unknown Exception: {e}")
+            chatConn.rollback()
+            chatConn.close()
+            generalConn.rollback()
+            generalConn.close()
             return False

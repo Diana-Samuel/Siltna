@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Siltna | Chat</title>
+    </head>
+    <body>
+        <div style="display: none; opacity: 0; visibility: hidden;">
+            <span id="chatid">{{ chatId }}</span>
+            <span id="userId">{{ userId }}</span>
+            <span id="userName"></span>
+            <span id="otherName"></span>
+        </div>
+        <div id="messages">
+
+        </div>
+        <label for="message"></label>
+        <input type="text" name="" id="message">
+        <button onclick="sendMessage()">Send</button>
+        <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+        <script src="/static/chat.js"></script>
+        <script>
+            const chatId = document.querySelector("#chatid").textContent;
+            const userId = document.querySelector("#userId").textContent;
+        </script>
+    </body>
+</html>
