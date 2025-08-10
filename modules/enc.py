@@ -334,16 +334,21 @@ def decryptPrivateKey(privateKey: str, password: str) -> str | None:
 
     # To prevent Unknown Exceptions
     try:
-        decryptedPrivateKey = serialization.load_pem_private_key(
-            data=privateKey,
-            password=password,
-            backend=default_backend()
+        privateKey = serialization.load_pem_private_key(privateKey.encode(),
+                                                    password=password.encode(),
+                                                    backend=default_backend())
+        
+        privateKey = privateKey.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
         )
 
-        return decryptedPrivateKey
+        return privateKey.decode()
     
     except Exception as e:
         from modules import logs
+        print(e)
         logs.addLog(f"[enc.decryptPrivateKey] Unexpected Exception: {e}")
         return None
     
@@ -359,6 +364,8 @@ def encryptMessage(message: str, publicKey: str) -> str:
     Outputs:
     encryptedMessage:   str                 # Message after Encryption
     """
+
+    publicKey = serialization.load_pem_public_key(publicKey.encode(), default_backend())
 
     encryptedMessage = publicKey.encrypt(
         message.encode(),
@@ -384,7 +391,12 @@ def decryptMessage(message: str, privateKey: str) -> str:
     decryptedMessage:   str                 # Message after Decryption
     """
 
-    message = base64.urlsafe_b64decode(message).decode('utf-8')
+    message = base64.urlsafe_b64decode(message.encode('utf-8'))
+
+    privateKey = serialization.load_pem_private_key(
+        privateKey.encode('utf-8'),
+        password=None
+    )
 
     decryptedMessage = privateKey.decrypt(
         message,

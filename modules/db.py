@@ -115,6 +115,7 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
                         "date": date,
                         "following": following
                     }
+        
         return userDict
 
     if dataType == "p":
@@ -159,11 +160,23 @@ def toDict(data: tuple, dataType: idTypes = "u") -> dict:
     
     if dataType == "cm":
         # Divide Message data to Pieces
-        message = data[0]
-        senderId = data[1]
-        date = data[2]
+        senderId = data[0]
+        receiverId = data[1]
+        senderMessage = data[2]
+        receiverMessage = data[3]
+        dateSend = data[-2]
+        detailedDate = data[-1]
 
+        messageDict = {
+            "senderId": senderId,
+            "receiverId": receiverId,
+            "senderMessage": senderMessage,
+            "receiverMessage": receiverMessage,
+            "dateSend": dateSend,
+            "detailedDate": detailedDate
+        }
 
+        return messageDict
 
 def checkID(ID: str, idType: idTypes = "u") -> bool:
     """
@@ -521,9 +534,6 @@ def checkVerified(userId: str) -> bool:
                 dataDict = toDict(data)
 
                 conn.close()
-                print(data)
-                print(dataDict)
-                print(dataDict["verified"])
                 return dataDict["verified"]
 
 
@@ -1161,7 +1171,7 @@ def getPublicKey(userId: str) -> str:
             # Create new cursor
             with conn.cursor() as cursor:
                 # Select Public Key
-                cursor.execute("SELECT publicKey, date FROM keys WHERE userId = %s",
+                cursor.execute('SELECT "publicKey", date FROM keys WHERE "userId" = %s',
                                (userId, ))
                 
                 data = cursor.fetchone()
@@ -1213,7 +1223,7 @@ def getPrivateKey(userId: str) -> str:
             # Create new cursor
             with conn.cursor() as cursor:
                 # Select Public Key
-                cursor.execute("SELECT privateKey, date FROM keys WHERE userId = %s",
+                cursor.execute("""SELECT "privateKey", date FROM keys WHERE "userId" = %s""",
                                (userId, ))
                 
                 data = cursor.fetchone()
@@ -1225,6 +1235,7 @@ def getPrivateKey(userId: str) -> str:
                 return privateKey
         # Handle Programming Errors
         except psycopg2.ProgrammingError as e:
+            print(e)
             logs.addLog(f"[db.getPrivateKey] psycopg2.ProgrammingError: {e}")
             conn.rollback()
             conn.close()
@@ -1238,6 +1249,7 @@ def getPrivateKey(userId: str) -> str:
 
         # Handle Unknown Exceptions 
         except Exception as e:
+            print(e)
             logs.addLog(f"[db.getPrivateKey] Unknown Exception: {e}")
             conn.rollback()
             conn.close()
@@ -1258,8 +1270,6 @@ def addToChat(chatId: str, message: str, userId: str) -> tuple[bool, None | str]
     value:      str | None              # Value of Error
     """
 
-    # TODO: Add Encryption
-
     # Create new connection with Chat Database
     conn = chatsConnect()
 
@@ -1268,12 +1278,22 @@ def addToChat(chatId: str, message: str, userId: str) -> tuple[bool, None | str]
         try:
             # Get timenow Date
             date = utils.timenow()
+            dt = utils.timenow(ifDetailed=True)
 
             # Create new cursor
             with conn.cursor() as cursor:
+                # Get Info needed
+                table = f"{chatId}_{userId}"
+                senderId = message["senderId"]
+                receiverId = message["receiverId"]
+                senderMessage = message["senderMessage"]
+                receiverMessage = message["receiverMessage"]
+
                 # Execute insert message
-                cursor.execute("INSERT INTO %s (message, userId, date) VALUES (%s, %s, %s)",
-                               (message, userId, date, ))
+                cursor.execute("""INSERT INTO "%s" ("senderId", "receiverId", "senderMessage", "receiverMessage", "dateSend", "detailedDate") VALUES 
+                                    (%s, %s, %s, %s, %s, %s)""",
+                               (table, senderId, receiverId, senderMessage, receiverMessage, date, dt))
+                
                 conn.commit()
 
                 conn.close()
@@ -1302,13 +1322,13 @@ def addToChat(chatId: str, message: str, userId: str) -> tuple[bool, None | str]
 
 
 
-def getChatInfo(chatId: str) -> dict:
+def getChatInfo(chatId: str, userId: str) -> dict:
     """
     Get Chat info from db
 
     Inputs:
     chatId: str             # Chat ID needed to get the Chat info
-
+    userId: str             # User ID needed to get Chat Info
     Outputs:
     Info:   dict            # Dict that has info
     """
@@ -1320,13 +1340,23 @@ def getChatInfo(chatId: str) -> dict:
     # Loop to prevent Connection Errors
     while True:
         try:
+            # Get Table Name
+            tableName = f"{chatId}_{userId}"
+
             # Create new cursor
             with chatConn.cursor() as cursor:
                 # Execute Select Chat
-                cursor.execute("SELECT * FROM %s",(chatId, ))
+                cursor.execute('SELECT * FROM "%s"',(tableName, ))
 
                 # Get all messages from DB
                 messages = cursor.fetchall()
+
+                editedMessages = []
+                if isinstance(messages,list):
+                    for i in messages:
+                        editedMessages.append(toDict(i,"cm"))
+                elif isinstance(messages,tuple):
+                    editedMessages.append(toDict(messages,"cm"))
 
                 chatConn.close()
 
@@ -1334,13 +1364,13 @@ def getChatInfo(chatId: str) -> dict:
                 # Execute Select Chat
                 cursor.execute('SELECT * FROM chats WHERE "chatId" = %s',(chatId, ))
                 data = cursor.fetchone()
-
+                
                 # Turn data to dict
                 dataDict = toDict(data,"c")
 
                 if dataDict:
                     # Add messages to Dict
-                    dataDict["messages"] = messages
+                    dataDict["messages"] = editedMessages
                 else:
                     return {}
                 
@@ -1393,11 +1423,12 @@ def createChat(chatId: str, firstUserId: str, SecondUserId: str) -> bool:
     # Loop to prevent Connection Errors
     while True:
         try:
-
+            tableNames = [f"{chatId}_{firstUserId}",f"{chatId}_{SecondUserId}"]
             # Create new cursor
             with chatConn.cursor() as cursor:
-                cursor.execute('CREATE TABLE %s (like test);',(chatId, ))
-                
+                cursor.execute('CREATE TABLE "%s" (like test);',(tableNames[0], ))
+                cursor.execute('CREATE TABLE "%s" (like test);',(tableNames[1], ))
+
                 chatConn.commit()
 
                 chatConn.close()
@@ -1410,6 +1441,7 @@ def createChat(chatId: str, firstUserId: str, SecondUserId: str) -> bool:
 
                 generalConn.close()
 
+            return True
         # Handle Programming Errors
         except psycopg2.ProgrammingError as e:
             logs.addLog(f"[db.getChatInfo] psycopg2.ProgrammingError: {e}")

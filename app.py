@@ -10,6 +10,8 @@ from flask_socketio import join_room,leave_room # Handle websocket Room
 
 from io import BytesIO                          # Handle showing Raw Images
 import datetime
+import json
+import time
 import os
 
 # Local Files and Fucntion
@@ -59,7 +61,10 @@ def make_session_permanent():
 # Index
 @app.route("/")
 def index():
-    userId = session["id"]
+    try:
+        userId = session["id"]
+    except KeyError:
+        userId = ""
     return render_template("index.html", userId = userId)
 
 # Login and signup
@@ -90,7 +95,7 @@ def auth():
             msg = "Registeration Completed Successfully, Please Verify and Login with your account."
             
             # Send Verification Link
-            verf.sendLink(email,f"https://siltna.dpdns.org/verify/{enc.encryptVerify(value)}")
+            verf.sendLink(email,f"https://siltna.dpdns.org/verify/{enc.encryptVerify(str(value))}")
             return render_template("auth.html",msg=msg)
         else:
             return render_template("auth.html",msg=value)
@@ -148,7 +153,7 @@ def logout():
 @app.route("/u/<userId>")
 def user(userId):
     # Check if user exists 
-    if not db.checkId(userId):
+    if not db.checkID(userId):
         # Return 404 Error
         return abort(404)
     
@@ -284,7 +289,6 @@ def getPosts():
     except KeyError:
         return jsonify({"status": "failed", "error": "You Must be Logged in"})
     except Exception as e:
-        print(f"Get POSTS error: {e}")
         return jsonify({"status": "failed", "error": str(e)})
 
 # Getting Post info
@@ -357,7 +361,6 @@ def postImage(postId,i):
                 send_file("static/images/notfound.png",mimetype="image/png")
         else:
             # Return not found Error
-            print(f"Error Occured: {postData}")
             return send_file("static/images/notfound.png",mimetype="image/png")
     else:
         # Return Forbidden Error
@@ -446,12 +449,14 @@ def staticfullicon():
 #####################################
 @app.route("/c/<chatId>")
 def chat(chatId):
+    # Get needed info (userId)
     userId = session["id"]
-    return render_template("chat.html",chatId=chatId,userId=userId)
+
+    return render_template("chat.html", chatId=chatId,userId=userId)
 
 
 # Check online status of user
-@app.route("/c/u/<userId>/chechStatus")
+@app.route("/c/u/<userId>/checkStatus")
 def checkOnlineStatus(userId):
     # Get redis server
     redisServer = app.config["USER_REDIS"]
@@ -459,47 +464,60 @@ def checkOnlineStatus(userId):
     # To prevent Unknown Errors
     try:
         # Get value from redis server
-        value = redisServer.hgetall(f"{app.config["USER_KEY_PREFIX"]}{userId}")
+        value = redisServer.hgetall(f"{app.config['USER_KEY_PREFIX']}{userId}")
         
         # Check if value empty
         if value:
             # Get status of user
-            status = bool(value["status"])
-            return status
+            status = bool(int(value["status"]))
+            return jsonify({"status": status})
         else:
-            return False
+            return jsonify({"status": False})
 
     # Handle unknown Errors
     except Exception as e:
-        print(f"[checkOnlineStatus] Unknown Status: {e}")
-        return False
+        return jsonify({"status": False})
 
 
 @app.route("/c/<chatId>/msgs")
 def getMessages(chatId):
     # Get chat id from session
     userId = session["id"]
-
+    privateKey = session["privateKey"]
     # Check if chat Exitst
-    chatInfo = db.getChatInfo(chatId)
+    chatInfo = db.getChatInfo(chatId,userId)
 
     if chatInfo:
         # Get Redis Chat server
         redisServer = app.config["CHAT_REDIS"]
 
-        chatCache = redisServer.hgetall(f"{app.config["CHAT_KEY_PREFIX"]}{chatId}")
+        chatCache = redisServer.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
 
         if chatCache:
-            for i in chatCache["messages"]:
-                chatInfo.append(i)
-            return chatInfo
-        else:
-            return jsonify(chatInfo)
+            for i in json.loads(chatCache["messages"]):
+                chatInfo["messages"].append(i)
+
+        messages = []
+        for msg in chatInfo["messages"]:
+            if str(msg["senderId"]) == str(userId):
+                message = enc.decryptMessage(msg["senderMessage"],privateKey)
+            else:
+                message = enc.decryptMessage(msg["receiverMessage"],privateKey)
+                    
+            data = {
+                "senderId": msg["senderId"],
+                "receiverId": msg["receiverId"],
+                "message": message,
+                "dateSend": msg["dateSend"],
+                "detailedDate": msg["detailedDate"]
+            }
+            messages.append(data)
+
+
+        chatInfo["messages"] = messages
+        return jsonify(chatInfo)
     else:
-        return None
-    
-
-
+        return jsonify({})
 
 
 @Socket.on("joinChat")
@@ -513,24 +531,57 @@ def joinChat(data):
     chatId = data["chatid"]
 
     # set status of user in Cache
-    userRedis.hset(f"{app.config["USER_KEY_PREFIX"]}{userId}", mapping={
+    userRedis.hset(f"{app.config['USER_KEY_PREFIX']}{userId}", mapping={
         "userId": userId,
         "status": 1
     })
 
+    # Get public Key
+    chatInfo = db.getChatInfo(chatId, userId)
+
+    if chatInfo["firstUserId"] == userId:
+        receiverId = chatInfo["secondUserId"]
+    else:
+        receiverId = chatInfo["firstUserId"]
+
+    receiverPublicKey = db.getPublicKey(receiverId)
+    senderPublicKey = db.getPublicKey(userId)
+
+    # Get usernames
+    senderData = db.getUserInfo(userId)
+    receiverData = db.getUserInfo(receiverId)
+
+    senderName = enc.decrypt(senderData["name"],senderData["date"])
+    receiverName = enc.decrypt(receiverData["name"],receiverData["date"])
+
     # add Chat in Cache
-    chatRedis.hset(f"{app.config["CHAT_KEY_PREFIX"]}{chatId}", mapping={
+    messages = []
+    chatRedis.hset(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}", mapping={
         "chatId": chatId,
-        "messages": []
+        "messages": json.dumps(messages),
+        "senderId": userId,
+        "receiverId": receiverId,
+        userId: senderPublicKey,
+        receiverId: receiverPublicKey,
+        f"{userId}_name": senderName,
+        f"{receiverId}_name": receiverName
     })
 
     # make user join room
     join_room(chatId)
 
+    # emit usernames
+    emit("receiveNames",{"senderId": userId,
+                         "receiverId": receiverId,
+                         "senderName": senderName,
+                         "receiverName": receiverName}
+
+                         ,room=chatId)
+
 
 
 @Socket.on("leaveChat")
-def joinChat(data):
+def leaveChat(data):
     # Get redis server
     chatRedis = app.config["CHAT_REDIS"]
     userRedis = app.config["USER_REDIS"]
@@ -539,16 +590,28 @@ def joinChat(data):
     userId = session["id"]
     chatId = data["chatid"]
 
+    # Get data from Cache and save it to DB
+    Cache = chatRedis.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+
+    if Cache:
+        messages = Cache["messages"]
+
+        messages = json.loads(messages)
+
+        for message in messages:
+            db.addToChat(Cache["chatId"], message, userId)
+    
+    
     # set status of user in Cache
-    userRedis.hset(f"{app.config["USER_KEY_PREFIX"]}{userId}", mapping={
+    userRedis.hset(f"{app.config['USER_KEY_PREFIX']}{userId}", mapping={
         "userId": userId,
         "status": 0
     })
 
     # delete Chat from Cache
-    chatRedis.delete(f"{app.config["CHAT_KEY_PREFIX"]}{chatId}")
+    chatRedis.delete(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
 
-    # make user join room
+    # make user leave room
     leave_room(chatId)
 
 
@@ -565,26 +628,64 @@ def sendMessage(data):
     dateSent = utils.timenow()
     dt = utils.timenow(ifDetailed=True)
 
+    cacheData = chatRedis.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
 
-    # Get other user public Key
-    db.getChatInfo(chatId)
-    
+    receiverId = cacheData["receiverId"]
+    receiverPublicKey = cacheData[receiverId]
+    senderPublicKey = cacheData[userId]
+
+    receiverMessage = enc.encryptMessage(message, receiverPublicKey)
+    senderMessage = enc.encryptMessage(message, senderPublicKey)
+
     # Create chat details
     messageInfo = {
         "senderId": userId,
-        "message": message,
+        "receiverId": receiverId,
+        "senderMessage": senderMessage,
+        "receiverMessage": receiverMessage,
         "dateSend": dateSent,
         "detailedDate": dt
     }
 
-    emit("recieve_message", messageInfo, room=chatId)
-        
+    # add message to Redis Cache
+    senderCache = chatRedis.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+    receiverCache = chatRedis.hgetall(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{receiverId}")
 
+    if receiverCache:
+        senderMessages = json.loads(senderCache["messages"])
+        senderMessages.append(messageInfo)
+        receiverMessages = json.loads(receiverCache["messages"])
+        receiverMessages.append(messageInfo)
+
+        senderCache["messages"] = json.dumps(senderMessages)
+        receiverCache["messages"] = json.dumps(receiverMessages)
+
+        chatRedis.delete(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+        chatRedis.delete(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{receiverId}")
+
+        chatRedis.hset(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}",mapping = senderCache)
+        chatRedis.hset(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{receiverId}",mapping = receiverCache)
+
+    else:
+        senderMessages = json.loads(senderCache["messages"])
+        senderMessages.append(messageInfo)
+
+        senderCache["messages"] = json.dumps(senderMessages)
+
+        chatRedis.delete(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}")
+
+        chatRedis.hset(f"{app.config['CHAT_KEY_PREFIX']}{chatId}_{userId}",mapping = senderCache)
+
+    
+    messageInfo["message"] = message
+
+    emit("receive_message", messageInfo, room=chatId)
+        
 
 # Static js for chat
 @app.route("/static/chat.js")
 def chatjs():
-    return send_file("/static/js/chat.js")
+    return send_file("static/js/chat.js")
 
 
 
