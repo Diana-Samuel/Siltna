@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 from cryptography.fernet import InvalidToken
 
-
+import logger
 
 import base64
 
@@ -97,6 +97,7 @@ def loadKey(date: str = None, encType :enc_types = "u") -> bytes:
         except Exception as e:
             raise
     except InvalidToken as e:
+        logger.error(f"Invalid master key token: {e}")
         raise
     except Exception as e:
         raise
